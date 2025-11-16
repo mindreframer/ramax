@@ -250,7 +250,7 @@ defmodule PState.Schema do
   @doc """
   Passthrough macro for migration function blocks.
 
-  This macro extracts the function from a `migrate do...end` block.
+  This macro extracts the function from a `migrate fn...end` expression.
 
   ## Examples
 
@@ -259,8 +259,8 @@ defmodule PState.Schema do
         map when is_map(map) -> map
       end
   """
-  defmacro migrate(do: block) do
-    block
+  defmacro migrate(fn_expr) do
+    fn_expr
   end
 
   @doc false
