@@ -56,60 +56,6 @@ defmodule Helpers.Value do
     end
   end
 
-  defp try_access_put(scope, field, value) do
-    # Check if scope implements Access behavior (like PState struct)
-    if is_struct(scope) && function_exported?(scope.__struct__, :get_and_update, 3) do
-      # Use get_and_update from Access protocol
-      {_old_value, updated_scope} =
-        Access.get_and_update(scope, field, fn current ->
-          # Merge if current value exists and is a map
-          merged_value =
-            case current do
-              existing when is_map(existing) and is_map(value) ->
-                Map.merge(existing, value)
-
-              _ ->
-                value
-            end
-
-          {current, merged_value}
-        end)
-
-      {:ok, updated_scope}
-    else
-      :error
-    end
-  rescue
-    _ -> :error
-  end
-
-  defp try_access_put_nested(scope, field, tail, value, idx_r) do
-    # Check if scope implements Access behavior (like PState struct)
-    if is_struct(scope) && function_exported?(scope.__struct__, :get_and_update, 3) do
-      # Get the current value for the field
-      current =
-        case Access.fetch(scope, field) do
-          {:ok, val} -> val
-          :error -> nil
-        end
-
-      # Recursively insert into the nested structure
-      scope_deep = insert(current, tail, value, idx_r)
-
-      # Update the field with the modified nested structure
-      {_old_value, updated_scope} =
-        Access.get_and_update(scope, field, fn _current ->
-          {current, scope_deep}
-        end)
-
-      {:ok, updated_scope}
-    else
-      :error
-    end
-  rescue
-    _ -> :error
-  end
-
   def insert(scope, [field | tail], value, idx_r) do
     get_type(field)
     |> case do
@@ -180,6 +126,60 @@ defmodule Helpers.Value do
         scoped = scope_deep |> List.replace_at(index, row)
         Map.replace(scope, field, scoped)
     end
+  end
+
+  defp try_access_put(scope, field, value) do
+    # Check if scope implements Access behavior (like PState struct)
+    if is_struct(scope) && function_exported?(scope.__struct__, :get_and_update, 3) do
+      # Use get_and_update from Access protocol
+      {_old_value, updated_scope} =
+        Access.get_and_update(scope, field, fn current ->
+          # Merge if current value exists and is a map
+          merged_value =
+            case current do
+              existing when is_map(existing) and is_map(value) ->
+                Map.merge(existing, value)
+
+              _ ->
+                value
+            end
+
+          {current, merged_value}
+        end)
+
+      {:ok, updated_scope}
+    else
+      :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp try_access_put_nested(scope, field, tail, value, idx_r) do
+    # Check if scope implements Access behavior (like PState struct)
+    if is_struct(scope) && function_exported?(scope.__struct__, :get_and_update, 3) do
+      # Get the current value for the field
+      current =
+        case Access.fetch(scope, field) do
+          {:ok, val} -> val
+          :error -> nil
+        end
+
+      # Recursively insert into the nested structure
+      scope_deep = insert(current, tail, value, idx_r)
+
+      # Update the field with the modified nested structure
+      {_old_value, updated_scope} =
+        Access.get_and_update(scope, field, fn _current ->
+          {current, scope_deep}
+        end)
+
+      {:ok, updated_scope}
+    else
+      :error
+    end
+  rescue
+    _ -> :error
   end
 
   defp maybe_merge(nil, value, scope, field), do: Map.put(scope, field, value)
@@ -389,6 +389,8 @@ defmodule Helpers.Value do
     end
   end
 
+  defp get_value_from_field(_scope, _field), do: nil
+
   defp try_access_fetch(scope, field) do
     # Check if scope implements Access behavior (like PState struct)
     if function_exported?(scope.__struct__, :fetch, 2) do
@@ -400,8 +402,6 @@ defmodule Helpers.Value do
     # If __struct__ doesn't exist (regular map), return :error
     _ -> :error
   end
-
-  defp get_value_from_field(_scope, _field), do: nil
 
   defp existing_key(scope, "_") when is_list(scope) do
     {"_", :base}
