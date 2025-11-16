@@ -71,4 +71,38 @@ defmodule PStateTest do
       assert pstate.ref_cache == %{"ref1" => "resolved1"}
     end
   end
+
+  describe "PState.new/2 (RMX001_3A)" do
+    test "RMX001_3A_T1: creates PState with ETS adapter" do
+      pstate =
+        PState.new("track:550e8400-e29b-41d4-a716-446655440000",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_pstate_init_1]
+        )
+
+      assert %PState{} = pstate
+      assert pstate.root_key == "track:550e8400-e29b-41d4-a716-446655440000"
+      assert pstate.adapter == PState.Adapters.ETS
+      assert is_map(pstate.adapter_state)
+      assert Map.has_key?(pstate.adapter_state, :table)
+    end
+
+    test "RMX001_3A_T2: initializes empty caches" do
+      pstate =
+        PState.new("track:uuid",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_pstate_init_2]
+        )
+
+      assert pstate.cache == %{}
+      assert pstate.ref_cache == %{}
+    end
+
+    test "RMX001_3A_T3: fails with invalid adapter" do
+      # Missing adapter option
+      assert_raise KeyError, fn ->
+        PState.new("track:uuid", adapter_opts: [table_name: :test])
+      end
+    end
+  end
 end
