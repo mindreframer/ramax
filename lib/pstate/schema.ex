@@ -122,31 +122,79 @@ defmodule PState.Schema do
 
   defmacro field(name, type, opts) when is_list(opts) do
     quote do
-      field_spec = %Field{
-        name: unquote(name),
-        type: unquote(type),
-        migrate_fn: nil,
-        opts: unquote(opts)
+      # Store field as plain data
+      field_data = {
+        :field_spec,
+        unquote(name),
+        unquote(type),
+        nil,
+        # ref_type
+        nil,
+        # migrate_fn_ref
+        unquote(opts)
+        # opts
       }
 
-      PState.Schema.__register_field__(__MODULE__, @current_entity, field_spec)
+      PState.Schema.__register_field__(__MODULE__, @current_entity, field_data)
     end
   end
 
   defmacro field(name, type, do: block) do
-    # TODO RMX002_4A: Properly implement migration function storage
-    # For now, we evaluate the block to get the function
-    quote do
-      migrate_fn = unquote(block)
+    # Generate a unique migration function name at macro expansion time
+    migration_fn_name = :"__migration_field_#{name}_#{:erlang.unique_integer([:positive])}__"
 
-      field_spec = %Field{
-        name: unquote(name),
-        type: unquote(type),
-        migrate_fn: migrate_fn,
-        opts: []
+    # Extract the function AST from the migrate macro
+    # The block should be wrapped with `migrate fn ... end`
+    fn_ast =
+      case block do
+        {{:., _, [{:__aliases__, _, [:PState, :Schema]}, :migrate]}, _, [fn_expr]} ->
+          fn_expr
+
+        {:migrate, _, [fn_expr]} ->
+          fn_expr
+
+        # If no migrate wrapper, assume block is the function itself
+        _ ->
+          block
+      end
+
+    # Extract clauses from the function
+    # The fn_ast should be {:fn, meta, clauses}
+    clauses =
+      case fn_ast do
+        {:fn, _, fn_clauses} ->
+          # Convert fn clauses to def clauses
+          Enum.map(fn_clauses, fn {:->, clause_meta, [args, body]} ->
+            {:->, clause_meta, [args, body]}
+          end)
+
+        _ ->
+          # Single expression, treat as identity
+          [{:->, [], [[{:value, [], nil}], fn_ast]}]
+      end
+
+    quote do
+      # Define the named migration function with the extracted clauses
+      def unquote(migration_fn_name)(value) do
+        case value do
+          unquote(clauses)
+        end
+      end
+
+      # Store field spec as plain data (no structs, no functions)
+      field_data = {
+        :field_spec,
+        unquote(name),
+        unquote(type),
+        nil,
+        # ref_type
+        {__MODULE__, unquote(migration_fn_name)},
+        # migrate_fn_ref
+        []
+        # opts
       }
 
-      PState.Schema.__register_field__(__MODULE__, @current_entity, field_spec)
+      PState.Schema.__register_field__(__MODULE__, @current_entity, field_data)
     end
   end
 
@@ -168,33 +216,73 @@ defmodule PState.Schema do
     quote do
       ref_type = Keyword.fetch!(unquote(opts), :ref)
 
-      field_spec = %Field{
-        name: unquote(name),
-        type: :ref,
-        ref_type: ref_type,
-        migrate_fn: nil,
-        opts: unquote(opts)
+      field_data = {
+        :field_spec,
+        unquote(name),
+        :ref,
+        ref_type,
+        nil,
+        # migrate_fn_ref
+        unquote(opts)
+        # opts
       }
 
-      PState.Schema.__register_field__(__MODULE__, @current_entity, field_spec)
+      PState.Schema.__register_field__(__MODULE__, @current_entity, field_data)
     end
   end
 
   defmacro belongs_to(name, opts, do: block) do
-    # TODO RMX002_4A: Properly implement migration function storage
+    # Generate a unique migration function name at macro expansion time
+    migration_fn_name = :"__migration_belongs_to_#{name}_#{:erlang.unique_integer([:positive])}__"
+
+    # Extract the function AST from the migrate macro
+    fn_ast =
+      case block do
+        {{:., _, [{:__aliases__, _, [:PState, :Schema]}, :migrate]}, _, [fn_expr]} ->
+          fn_expr
+
+        {:migrate, _, [fn_expr]} ->
+          fn_expr
+
+        _ ->
+          block
+      end
+
+    # Extract clauses from the function
+    clauses =
+      case fn_ast do
+        {:fn, _, fn_clauses} ->
+          Enum.map(fn_clauses, fn {:->, clause_meta, [args, body]} ->
+            {:->, clause_meta, [args, body]}
+          end)
+
+        _ ->
+          [{:->, [], [[{:value, [], nil}], fn_ast]}]
+      end
+
     quote do
       ref_type = Keyword.fetch!(unquote(opts), :ref)
-      migrate_fn = unquote(block)
 
-      field_spec = %Field{
-        name: unquote(name),
-        type: :ref,
-        ref_type: ref_type,
-        migrate_fn: migrate_fn,
-        opts: unquote(opts)
+      # Define the named migration function with the extracted clauses
+      def unquote(migration_fn_name)(value) do
+        case value do
+          unquote(clauses)
+        end
+      end
+
+      # Store field as plain data
+      field_data = {
+        :field_spec,
+        unquote(name),
+        :ref,
+        ref_type,
+        {__MODULE__, unquote(migration_fn_name)},
+        # migrate_fn_ref
+        unquote(opts)
+        # opts
       }
 
-      PState.Schema.__register_field__(__MODULE__, @current_entity, field_spec)
+      PState.Schema.__register_field__(__MODULE__, @current_entity, field_data)
     end
   end
 
@@ -217,33 +305,73 @@ defmodule PState.Schema do
     quote do
       ref_type = Keyword.fetch!(unquote(opts), :ref)
 
-      field_spec = %Field{
-        name: unquote(name),
-        type: :collection,
-        ref_type: ref_type,
-        migrate_fn: nil,
-        opts: unquote(opts)
+      field_data = {
+        :field_spec,
+        unquote(name),
+        :collection,
+        ref_type,
+        nil,
+        # migrate_fn_ref
+        unquote(opts)
+        # opts
       }
 
-      PState.Schema.__register_field__(__MODULE__, @current_entity, field_spec)
+      PState.Schema.__register_field__(__MODULE__, @current_entity, field_data)
     end
   end
 
   defmacro has_many(name, opts, do: block) do
-    # TODO RMX002_4A: Properly implement migration function storage
+    # Generate a unique migration function name at macro expansion time
+    migration_fn_name = :"__migration_has_many_#{name}_#{:erlang.unique_integer([:positive])}__"
+
+    # Extract the function AST from the migrate macro
+    fn_ast =
+      case block do
+        {{:., _, [{:__aliases__, _, [:PState, :Schema]}, :migrate]}, _, [fn_expr]} ->
+          fn_expr
+
+        {:migrate, _, [fn_expr]} ->
+          fn_expr
+
+        _ ->
+          block
+      end
+
+    # Extract clauses from the function
+    clauses =
+      case fn_ast do
+        {:fn, _, fn_clauses} ->
+          Enum.map(fn_clauses, fn {:->, clause_meta, [args, body]} ->
+            {:->, clause_meta, [args, body]}
+          end)
+
+        _ ->
+          [{:->, [], [[{:value, [], nil}], fn_ast]}]
+      end
+
     quote do
       ref_type = Keyword.fetch!(unquote(opts), :ref)
-      migrate_fn = unquote(block)
 
-      field_spec = %Field{
-        name: unquote(name),
-        type: :collection,
-        ref_type: ref_type,
-        migrate_fn: migrate_fn,
-        opts: unquote(opts)
+      # Define the named migration function with the extracted clauses
+      def unquote(migration_fn_name)(value) do
+        case value do
+          unquote(clauses)
+        end
+      end
+
+      # Store field as plain data
+      field_data = {
+        :field_spec,
+        unquote(name),
+        :collection,
+        ref_type,
+        {__MODULE__, unquote(migration_fn_name)},
+        # migrate_fn_ref
+        unquote(opts)
+        # opts
       }
 
-      PState.Schema.__register_field__(__MODULE__, @current_entity, field_spec)
+      PState.Schema.__register_field__(__MODULE__, @current_entity, field_data)
     end
   end
 
@@ -264,14 +392,14 @@ defmodule PState.Schema do
   end
 
   @doc false
-  def __register_field__(module, entity_name, field_spec) do
+  def __register_field__(module, entity_name, field_data) do
     entities = Module.get_attribute(module, :entities) || []
 
     # Find or create entity entry
     case List.keyfind(entities, entity_name, 0) do
       {^entity_name, fields} ->
         # Entity exists, add field to it
-        updated = {entity_name, [field_spec | fields]}
+        updated = {entity_name, [field_data | fields]}
         new_entities = List.keyreplace(entities, entity_name, 0, updated)
         Module.delete_attribute(module, :entities)
 
@@ -281,16 +409,22 @@ defmodule PState.Schema do
 
       nil ->
         # Entity doesn't exist, create it
-        Module.put_attribute(module, :entities, {entity_name, [field_spec]})
+        Module.put_attribute(module, :entities, {entity_name, [field_data]})
     end
   end
 
   @doc false
   defmacro __before_compile__(_env) do
-    # TODO RMX002_4A: This implementation doesn't properly handle migration functions
-    # Migration functions cannot be escaped into module attributes
-    # This will be fixed when implementing RMX002_4A
     quote do
+      # Generate entities map as a runtime computation
+      defp __entities_raw__ do
+        @entities
+        |> Enum.map(fn {name, fields} ->
+          {name, Enum.reverse(fields)}
+        end)
+        |> Map.new()
+      end
+
       @doc """
       Get schema introspection information.
 
@@ -306,9 +440,15 @@ defmodule PState.Schema do
           # => [%Field{}, ...]
       """
       def __schema__(:entities) do
-        @entities
+        # Convert migrate_fn_ref to actual functions at runtime
+        __entities_raw__()
         |> Enum.map(fn {name, fields} ->
-          {name, Enum.reverse(fields)}
+          fields_with_fns =
+            Enum.map(fields, fn field ->
+              PState.Schema.__hydrate_field__(field)
+            end)
+
+          {name, fields_with_fns}
         end)
         |> Map.new()
       end
@@ -324,5 +464,21 @@ defmodule PState.Schema do
         end
       end
     end
+  end
+
+  @doc false
+  def __hydrate_field__({:field_spec, name, type, ref_type, migrate_fn_ref, opts}) do
+    %Field{
+      name: name,
+      type: type,
+      ref_type: ref_type,
+      migrate_fn:
+        case migrate_fn_ref do
+          {mod, fn_name} -> fn value -> apply(mod, fn_name, [value]) end
+          nil -> nil
+        end,
+      migrate_fn_ref: migrate_fn_ref,
+      opts: opts
+    }
   end
 end

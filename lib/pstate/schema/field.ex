@@ -49,6 +49,7 @@ defmodule PState.Schema.Field do
     :type,
     :ref_type,
     :migrate_fn,
+    :migrate_fn_ref,
     opts: []
   ]
 
@@ -57,6 +58,7 @@ defmodule PState.Schema.Field do
           type: atom(),
           ref_type: atom() | nil,
           migrate_fn: (term() -> term()) | nil,
+          migrate_fn_ref: {module(), atom()} | nil,
           opts: keyword()
         }
 end
