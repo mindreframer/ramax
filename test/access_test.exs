@@ -234,8 +234,9 @@ defmodule AccessTest do
       end
     end
 
-    test "detects cycle in nested refs", %{pstate: pstate} do
-      # Create entities where nested ref creates cycle
+    test "handles cycle in nested refs by leaving ref unresolved", %{pstate: pstate} do
+      # Create entities where nested ref creates cycle (bidirectional pattern)
+      # This is similar to parent ↔ child bidirectional refs
       pstate =
         put_in(pstate["entity:A"], %{
           id: "A",
@@ -248,9 +249,14 @@ defmodule AccessTest do
           next: Ref.new("entity:A")
         })
 
-      assert_raise PState.Error, fn ->
-        PState.fetch(pstate, "entity:A")
-      end
+      # Should not raise - instead leaves the backwards ref unresolved
+      {:ok, a} = PState.fetch(pstate, "entity:A")
+      assert a.id == "A"
+      # A's next should resolve to B
+      assert is_map(a.next)
+      assert a.next.id == "B"
+      # But B's next should stay as Ref to avoid infinite loop
+      assert %Ref{key: "entity:A"} = a.next.next
     end
 
     test "detects longer cycles (A→B→C→A)", %{pstate: pstate} do

@@ -210,10 +210,18 @@ defmodule PState do
       resolved_v =
         case v do
           %Ref{key: ref_key} ->
-            # Resolve ref using the same visited set (cycle detection happens in fetch_with_visited)
-            case fetch_with_visited(pstate, ref_key, visited) do
-              {:ok, resolved} -> resolved
-              :error -> v
+            # Check if this ref would create a cycle
+            # If it's already in visited, leave it as a Ref instead of raising
+            # This allows bidirectional references to work
+            if MapSet.member?(visited, ref_key) do
+              # Leave as Ref - don't resolve to avoid circular resolution
+              v
+            else
+              # Resolve ref using the same visited set
+              case fetch_with_visited(pstate, ref_key, visited) do
+                {:ok, resolved} -> resolved
+                :error -> v
+              end
             end
 
           nested when is_map(nested) ->
@@ -228,4 +236,58 @@ defmodule PState do
   end
 
   defp resolve_nested_refs(_pstate, value, _visited), do: value
+
+  # Bidirectional references helper
+
+  @doc """
+  Create entity with bidirectional references.
+
+  Creates:
+  1. Child entity with ref to parent
+  2. Adds child ref to parent's collection
+
+  ## Options
+
+  - `:entity` - Tuple of `{entity_type, entity_id}` for the child entity (required)
+  - `:data` - Map of data for the child entity (required)
+  - `:parent` - Tuple of `{parent_type, parent_id}` for the parent entity (required)
+  - `:parent_collection` - Atom for the parent's collection field (default: `:children`)
+
+  ## Examples
+
+      iex> pstate = PState.create_linked(pstate,
+      ...>   entity: {:base_card, "7c9e6679-7425-40de-944b-e07fc1f90ae7"},
+      ...>   data: %{front: "Hello", back: "Hola"},
+      ...>   parent: {:base_deck, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"},
+      ...>   parent_collection: :cards
+      ...> )
+
+  This creates:
+  - Child entity at "base_card:7c9e6679..." with a `base_deck` ref to parent
+  - Parent's `cards` collection gets a ref to the child
+
+  """
+  @spec create_linked(t(), keyword()) :: t()
+  def create_linked(pstate, opts) when is_list(opts) do
+    {entity_type, entity_id} = Keyword.fetch!(opts, :entity)
+    data = Keyword.fetch!(opts, :data)
+    {parent_type, parent_id} = Keyword.fetch!(opts, :parent)
+    parent_collection = Keyword.get(opts, :parent_collection, :children)
+
+    entity_key = "#{entity_type}:#{entity_id}"
+    parent_key = "#{parent_type}:#{parent_id}"
+
+    # Add parent ref to child data
+    child_data = Map.put(data, parent_type, Ref.new(parent_key))
+
+    # Write child entity
+    pstate = put_in(pstate[entity_key], child_data)
+
+    # Add child ref to parent collection using Helpers.Value.insert
+    # This ensures nested structure is created properly
+    alias Helpers.Value
+
+    parent_collection_path = "#{parent_key}.#{parent_collection}.#{entity_id}"
+    Value.insert(pstate, parent_collection_path, Ref.new(entity_key))
+  end
 end

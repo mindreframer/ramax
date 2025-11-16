@@ -105,4 +105,180 @@ defmodule PStateTest do
       end
     end
   end
+
+  describe "PState.create_linked/2 (RMX001_5A)" do
+    setup do
+      pstate =
+        PState.new("track:uuid",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_bidirectional_refs]
+        )
+
+      # Create a parent entity first
+      parent_id = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+      parent_key = "base_deck:#{parent_id}"
+
+      pstate =
+        put_in(pstate[parent_key], %{
+          id: parent_id,
+          title: "Introduction",
+          cards: %{}
+        })
+
+      {:ok, pstate: pstate, parent_id: parent_id}
+    end
+
+    test "RMX001_5A_T1: creates child entity", %{pstate: pstate, parent_id: parent_id} do
+      card_id = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card_id},
+          data: %{front: "Hello", back: "Hola"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :cards
+        )
+
+      # Verify child entity was created
+      {:ok, card} = PState.fetch(pstate, "base_card:#{card_id}")
+      assert card.front == "Hello"
+      assert card.back == "Hola"
+    end
+
+    test "RMX001_5A_T2: adds parent ref to child", %{pstate: pstate, parent_id: parent_id} do
+      card_id = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card_id},
+          data: %{front: "Hello", back: "Hola"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :cards
+        )
+
+      # Verify child has parent ref (which auto-resolves when fetched)
+      {:ok, card} = PState.fetch(pstate, "base_card:#{card_id}")
+      # The base_deck ref should resolve to the actual deck
+      assert is_map(card.base_deck)
+      assert card.base_deck.id == parent_id
+      assert card.base_deck.title == "Introduction"
+    end
+
+    test "RMX001_5A_T3: adds child ref to parent collection", %{
+      pstate: pstate,
+      parent_id: parent_id
+    } do
+      card_id = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card_id},
+          data: %{front: "Hello", back: "Hola"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :cards
+        )
+
+      # Verify parent collection has child ref (which auto-resolves when fetched)
+      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      assert is_map(deck.cards)
+      # The child ref should resolve to the actual card
+      card = deck.cards[card_id]
+      assert is_map(card)
+      assert card.front == "Hello"
+      assert card.back == "Hola"
+    end
+
+    test "RMX001_5A_T4: works with custom collection name", %{
+      pstate: pstate,
+      parent_id: parent_id
+    } do
+      card_id = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card_id},
+          data: %{front: "Hello", back: "Hola"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :items
+        )
+
+      # Verify child ref is in custom collection (as string key due to Helpers.Value)
+      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      # Helpers.Value.insert converts atom keys to strings
+      assert is_map(deck["items"])
+      card = deck["items"][card_id]
+      assert is_map(card)
+      assert card.front == "Hello"
+      assert card.back == "Hola"
+    end
+
+    test "RMX001_5A_T5: preserves existing parent collection", %{
+      pstate: pstate,
+      parent_id: parent_id
+    } do
+      # Create first card
+      card1_id = "11111111-1111-1111-1111-111111111111"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card1_id},
+          data: %{front: "First", back: "Primero"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :cards
+        )
+
+      # Create second card
+      card2_id = "22222222-2222-2222-2222-222222222222"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card2_id},
+          data: %{front: "Second", back: "Segundo"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :cards
+        )
+
+      # Verify both cards are in collection (refs auto-resolve)
+      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      assert map_size(deck.cards) == 2
+
+      # Check first card
+      card1 = deck.cards[card1_id]
+      assert is_map(card1)
+      assert card1.front == "First"
+      assert card1.back == "Primero"
+
+      # Check second card
+      card2 = deck.cards[card2_id]
+      assert is_map(card2)
+      assert card2.front == "Second"
+      assert card2.back == "Segundo"
+    end
+
+    test "RMX001_5A_T6: allows bidirectional navigation (child→parent→child)", %{
+      pstate: pstate,
+      parent_id: parent_id
+    } do
+      card_id = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+      pstate =
+        PState.create_linked(pstate,
+          entity: {:base_card, card_id},
+          data: %{front: "Hello", back: "Hola"},
+          parent: {:base_deck, parent_id},
+          parent_collection: :cards
+        )
+
+      # Navigate from child to parent (ref auto-resolves)
+      {:ok, card} = PState.fetch(pstate, "base_card:#{card_id}")
+      assert card.base_deck.id == parent_id
+      assert card.base_deck.title == "Introduction"
+
+      # Navigate from parent to child (ref auto-resolves)
+      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      resolved_card = deck.cards[card_id]
+      assert resolved_card.front == "Hello"
+      assert resolved_card.back == "Hola"
+    end
+  end
 end
