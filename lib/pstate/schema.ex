@@ -134,6 +134,8 @@ defmodule PState.Schema do
   end
 
   defmacro field(name, type, do: block) do
+    # TODO RMX002_4A: Properly implement migration function storage
+    # For now, we evaluate the block to get the function
     quote do
       migrate_fn = unquote(block)
 
@@ -179,6 +181,7 @@ defmodule PState.Schema do
   end
 
   defmacro belongs_to(name, opts, do: block) do
+    # TODO RMX002_4A: Properly implement migration function storage
     quote do
       ref_type = Keyword.fetch!(unquote(opts), :ref)
       migrate_fn = unquote(block)
@@ -227,6 +230,7 @@ defmodule PState.Schema do
   end
 
   defmacro has_many(name, opts, do: block) do
+    # TODO RMX002_4A: Properly implement migration function storage
     quote do
       ref_type = Keyword.fetch!(unquote(opts), :ref)
       migrate_fn = unquote(block)
@@ -283,6 +287,9 @@ defmodule PState.Schema do
 
   @doc false
   defmacro __before_compile__(_env) do
+    # TODO RMX002_4A: This implementation doesn't properly handle migration functions
+    # Migration functions cannot be escaped into module attributes
+    # This will be fixed when implementing RMX002_4A
     quote do
       @doc """
       Get schema introspection information.
