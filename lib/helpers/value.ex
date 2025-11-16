@@ -33,14 +33,22 @@ defmodule Helpers.Value do
     get_type(field)
     |> case do
       {:string, field} ->
-        existing_key(scope, field)
-        |> case do
-          {field, :exists} ->
-            Map.get(scope, field)
-            |> maybe_merge(value, scope, field)
+        # Try to use Access protocol for structs like PState
+        case try_access_put(scope, field, value) do
+          {:ok, updated_scope} ->
+            updated_scope
 
-          {field, :new} ->
-            Map.put(scope, field, value)
+          :error ->
+            # Fall back to Map operations for regular maps
+            existing_key(scope, field)
+            |> case do
+              {field, :exists} ->
+                Map.get(scope, field)
+                |> maybe_merge(value, scope, field)
+
+              {field, :new} ->
+                Map.put(scope, field, value)
+            end
         end
 
       _ ->
@@ -48,18 +56,80 @@ defmodule Helpers.Value do
     end
   end
 
+  defp try_access_put(scope, field, value) do
+    # Check if scope implements Access behavior (like PState struct)
+    if is_struct(scope) && function_exported?(scope.__struct__, :get_and_update, 3) do
+      # Use get_and_update from Access protocol
+      {_old_value, updated_scope} =
+        Access.get_and_update(scope, field, fn current ->
+          # Merge if current value exists and is a map
+          merged_value =
+            case current do
+              existing when is_map(existing) and is_map(value) ->
+                Map.merge(existing, value)
+
+              _ ->
+                value
+            end
+
+          {current, merged_value}
+        end)
+
+      {:ok, updated_scope}
+    else
+      :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp try_access_put_nested(scope, field, tail, value, idx_r) do
+    # Check if scope implements Access behavior (like PState struct)
+    if is_struct(scope) && function_exported?(scope.__struct__, :get_and_update, 3) do
+      # Get the current value for the field
+      current =
+        case Access.fetch(scope, field) do
+          {:ok, val} -> val
+          :error -> nil
+        end
+
+      # Recursively insert into the nested structure
+      scope_deep = insert(current, tail, value, idx_r)
+
+      # Update the field with the modified nested structure
+      {_old_value, updated_scope} =
+        Access.get_and_update(scope, field, fn _current ->
+          {current, scope_deep}
+        end)
+
+      {:ok, updated_scope}
+    else
+      :error
+    end
+  rescue
+    _ -> :error
+  end
+
   def insert(scope, [field | tail], value, idx_r) do
     get_type(field)
     |> case do
       {:string, field} ->
-        {field, _} = existing_key(scope, field)
+        # Try Access protocol first for structs like PState
+        case try_access_put_nested(scope, field, tail, value, idx_r) do
+          {:ok, updated_scope} ->
+            updated_scope
 
-        scope_deep =
-          get_scope(scope, field)
-          |> insert(tail, value, idx_r)
+          :error ->
+            # Fall back to Map operations for regular maps
+            {field, _} = existing_key(scope, field)
 
-        Map.get(scope, field)
-        |> maybe_merge(scope_deep, scope, field)
+            scope_deep =
+              get_scope(scope, field)
+              |> insert(tail, value, idx_r)
+
+            Map.get(scope, field)
+            |> maybe_merge(scope_deep, scope, field)
+        end
 
       {:array, field} ->
         {field, _} = existing_key(scope, field)
@@ -299,16 +369,36 @@ defmodule Helpers.Value do
   def get_scope(scope, field), do: get_value_from_field(scope, field)
 
   defp get_value_from_field(scope, field) when is_map(scope) do
-    case existing_key(scope, field) do
-      {field, :exists} ->
-        Map.get(scope, field)
+    # First try Access protocol (for structs like PState)
+    case try_access_fetch(scope, field) do
+      {:ok, value} ->
+        value
 
-      {_field, :new} ->
-        nil
+      :error ->
+        # Fall back to Map.get for regular maps
+        case existing_key(scope, field) do
+          {field, :exists} ->
+            Map.get(scope, field)
 
-      {_scope, :array} ->
-        field
+          {_field, :new} ->
+            nil
+
+          {_field, :base} ->
+            field
+        end
     end
+  end
+
+  defp try_access_fetch(scope, field) do
+    # Check if scope implements Access behavior (like PState struct)
+    if function_exported?(scope.__struct__, :fetch, 2) do
+      Access.fetch(scope, field)
+    else
+      :error
+    end
+  rescue
+    # If __struct__ doesn't exist (regular map), return :error
+    _ -> :error
   end
 
   defp get_value_from_field(_scope, _field), do: nil
