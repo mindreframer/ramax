@@ -88,7 +88,16 @@ defmodule PState.SchemaModuleTest do
     test "Field struct enforces required keys via @enforce_keys" do
       # Verify @enforce_keys is set correctly on the Field module
       assert Field.__struct__() |> Map.keys() |> Enum.sort() ==
-               [:__struct__, :migrate_fn, :migrate_fn_ref, :name, :opts, :ref_type, :type]
+               [
+                 :__struct__,
+                 :migrate_fn,
+                 :migrate_fn_ref,
+                 :name,
+                 :opts,
+                 :ref_type,
+                 :type,
+                 :validate_fn
+               ]
                |> Enum.sort()
     end
 

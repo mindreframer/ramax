@@ -50,6 +50,7 @@ defmodule PState.Schema.Field do
     :ref_type,
     :migrate_fn,
     :migrate_fn_ref,
+    :validate_fn,
     opts: []
   ]
 
@@ -59,6 +60,7 @@ defmodule PState.Schema.Field do
           ref_type: atom() | nil,
           migrate_fn: (term() -> term()) | nil,
           migrate_fn_ref: {module(), atom()} | nil,
+          validate_fn: (term() -> boolean()) | nil,
           opts: keyword()
         }
 end

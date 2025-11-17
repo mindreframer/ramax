@@ -67,7 +67,9 @@ defmodule PState.Migration do
 
   Returns true if:
   1. The field has a migration function defined, AND
-  2. The value does not match the expected type
+  2. Either:
+     a. The value does not match the expected type, OR
+     b. The field has a validate_fn and the value fails validation
 
   ## Examples
 
@@ -85,7 +87,19 @@ defmodule PState.Migration do
   """
   @spec needs_migration?(term(), Field.t()) :: boolean()
   def needs_migration?(value, field_spec) do
-    field_spec.migrate_fn != nil and
-      not type_matches?(value, field_spec.type)
+    has_migration_fn? = field_spec.migrate_fn != nil
+
+    cond do
+      not has_migration_fn? ->
+        false
+
+      # If field has validate_fn, use it to check if value is valid
+      field_spec.validate_fn != nil ->
+        not field_spec.validate_fn.(value)
+
+      # Otherwise use type matching
+      true ->
+        not type_matches?(value, field_spec.type)
+    end
   end
 end
