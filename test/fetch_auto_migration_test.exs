@@ -34,7 +34,7 @@ defmodule PState.FetchAutoMigrationTest do
   end
 
   # Helper to create PState with ETS adapter
-  defp create_pstate(opts \\ []) do
+  defp create_pstate(opts) do
     schema = Keyword.get(opts, :schema, nil)
     table_name = :"test_table_#{:erlang.unique_integer([:positive])}"
 

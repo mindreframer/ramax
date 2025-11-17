@@ -250,7 +250,7 @@ defmodule PState.FieldMigrationTest do
                 %{version: 1, data: str, migrated: true}
 
               # Version 2: map without version
-              %{data: data} = map when not is_map_key(map, :version) ->
+              %{data: _data} = map when not is_map_key(map, :version) ->
                 Map.merge(map, %{version: 2, migrated: true})
 
               # Version 3: current format
