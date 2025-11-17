@@ -13,8 +13,8 @@ echo "2. Running mix compile..."
 mix compile
 
 echo ""
-echo "3. Running MCR001 tests..."
-mix test test/moo_courses_web/mcr001_1a_test.exs test/moo_courses_web/mcr001_2a_test.exs test/moo_courses_web/auth_test.exs
+echo "3. Running all tests..."
+mix test
 
 echo ""
 echo "✅ All QA checks passed!"

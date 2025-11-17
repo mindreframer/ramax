@@ -198,7 +198,7 @@ defmodule PState do
     # Add current key to visited set
     new_visited = MapSet.put(visited, key)
 
-    case Internal.fetch_with_cache(pstate, key) do
+    case Internal.fetch_and_auto_migrate(pstate, key) do
       {:ok, %Ref{key: ref_key}} ->
         # Auto-resolve reference recursively
         fetch_with_visited(pstate, ref_key, new_visited)
