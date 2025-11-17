@@ -160,8 +160,7 @@ defmodule PState.Internal do
   If no schema is present, falls back to `fetch_with_cache/2`.
   If schema is present, fetches raw data and applies migration if needed.
 
-  SYNCHRONOUS only - no background write yet (deferred to RMX004).
-  Migration happens on EVERY read.
+  If migration occurs, queues background write to MigrationWriter.
 
   ## Examples
 
@@ -186,17 +185,58 @@ defmodule PState.Internal do
            entity_type <- extract_entity_type(key),
            field_specs <- pstate.schema.__schema__(:fields, entity_type) do
         # Migrate if schema defined
-        {migrated_data, _changed?} = migrate_entity(raw_data, field_specs)
+        {migrated_data, changed?} = migrate_entity(raw_data, field_specs)
 
-        # NOTE: No background write yet (that's RMX004)
-        # For now, migration happens every read (synchronous)
+        # Queue background write if changed
+        if changed? do
+          queue_migration_write(key, migrated_data)
+        end
 
         {:ok, migrated_data}
       end
     end
   end
 
+  @doc """
+  Batch put multiple key-value pairs.
+
+  Uses adapter's multi_put if available, falls back to individual puts.
+
+  ## Examples
+
+      iex> entries = [{"key1", val1}, {"key2", val2}]
+      iex> PState.Internal.multi_put(pstate, entries)
+      :ok
+  """
+  @spec multi_put(PState.t(), [{String.t(), term()}]) :: :ok
+  def multi_put(%PState{} = pstate, entries) when is_list(entries) do
+    # Encode all values
+    encoded_entries = Enum.map(entries, fn {key, value} -> {key, encode_value(value)} end)
+
+    # Use adapter's multi_put if available
+    if function_exported?(pstate.adapter, :multi_put, 2) do
+      pstate.adapter.multi_put(pstate.adapter_state, encoded_entries)
+    else
+      # Fallback: individual puts
+      Enum.each(encoded_entries, fn {key, value} ->
+        :ok = pstate.adapter.put(pstate.adapter_state, key, value)
+      end)
+
+      :ok
+    end
+  end
+
   # Private helper functions
+
+  defp queue_migration_write(key, value) do
+    # Try to queue write if MigrationWriter is running
+    # Ignore if not running (graceful degradation)
+    try do
+      PState.MigrationWriter.queue_write(key, value)
+    catch
+      :exit, {:noproc, _} -> :ok
+    end
+  end
 
   @doc false
   defp invalidate_ref_cache(pstate, _key) do
