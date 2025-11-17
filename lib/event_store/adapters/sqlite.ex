@@ -71,6 +71,30 @@ defmodule EventStore.Adapters.SQLite do
         ON events(correlation_id) WHERE correlation_id IS NOT NULL
         """)
 
+        # Create spaces table for space registry
+        Exqlite.Sqlite3.execute(db, """
+        CREATE TABLE IF NOT EXISTS spaces (
+          space_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          space_name TEXT UNIQUE NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+          metadata TEXT
+        )
+        """)
+
+        # Create index for space name lookups
+        Exqlite.Sqlite3.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_spaces_name
+        ON spaces(space_name)
+        """)
+
+        # Create space_sequences table for per-space event sequences
+        Exqlite.Sqlite3.execute(db, """
+        CREATE TABLE IF NOT EXISTS space_sequences (
+          space_id INTEGER PRIMARY KEY,
+          last_sequence INTEGER NOT NULL DEFAULT 0
+        )
+        """)
+
         {:ok, %{db: db}}
 
       {:error, reason} ->
@@ -317,4 +341,225 @@ defmodule EventStore.Adapters.SQLite do
 
   defp to_hex(n) when n < 10, do: ?0 + n
   defp to_hex(n), do: ?a + n - 10
+
+  # Space management helpers
+
+  @doc """
+  Insert a new space into the registry.
+
+  Returns {:ok, space_id} on success.
+  """
+  def insert_space(state, space_name, metadata) do
+    timestamp = :os.system_time(:second)
+    metadata_json = if metadata, do: Jason.encode!(metadata), else: nil
+
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           """
+           INSERT INTO spaces (space_name, created_at, metadata)
+           VALUES (?1, ?2, ?3)
+           """
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_name, timestamp, metadata_json])
+
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          :done ->
+            {:ok, space_id} = Exqlite.Sqlite3.last_insert_rowid(state.db)
+            {:ok, space_id}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Get space by name.
+
+  Returns {:ok, %Ramax.Space{}} or {:error, :not_found}.
+  """
+  def get_space_by_name(state, space_name) do
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           """
+           SELECT space_id, space_name, metadata
+           FROM spaces
+           WHERE space_name = ?1
+           """
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_name])
+
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          {:row, [space_id, space_name, metadata_json]} ->
+            metadata =
+              if metadata_json do
+                Jason.decode!(metadata_json)
+              else
+                nil
+              end
+
+            space = %Ramax.Space{
+              space_id: space_id,
+              space_name: space_name,
+              metadata: metadata
+            }
+
+            {:ok, space}
+
+          :done ->
+            {:error, :not_found}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Get space by ID.
+
+  Returns {:ok, %Ramax.Space{}} or {:error, :not_found}.
+  """
+  def get_space_by_id(state, space_id) do
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           """
+           SELECT space_id, space_name, metadata
+           FROM spaces
+           WHERE space_id = ?1
+           """
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
+
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          {:row, [space_id, space_name, metadata_json]} ->
+            metadata =
+              if metadata_json do
+                Jason.decode!(metadata_json)
+              else
+                nil
+              end
+
+            space = %Ramax.Space{
+              space_id: space_id,
+              space_name: space_name,
+              metadata: metadata
+            }
+
+            {:ok, space}
+
+          :done ->
+            {:error, :not_found}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  List all spaces ordered by space_id.
+
+  Returns {:ok, [%Ramax.Space{}, ...]}.
+  """
+  def list_all_spaces(state) do
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           """
+           SELECT space_id, space_name, metadata
+           FROM spaces
+           ORDER BY space_id ASC
+           """
+         ) do
+      {:ok, stmt} ->
+        spaces = fetch_all_spaces(state.db, stmt)
+        {:ok, spaces}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Delete a space and cascade all related data.
+
+  Removes:
+  - Space record
+  - Space sequence
+  - All events in this space (will be added in Phase 3)
+  - All PState data in this space (will be added in Phase 5)
+  - Projection checkpoints (will be added in Phase 6)
+  """
+  def delete_space(state, space_id) do
+    # Use a transaction for atomic deletion
+    case Exqlite.Sqlite3.execute(state.db, "BEGIN TRANSACTION") do
+      :ok ->
+        # Delete space sequences
+        delete_query(state.db, "DELETE FROM space_sequences WHERE space_id = ?1", [space_id])
+
+        # Delete the space itself
+        delete_query(state.db, "DELETE FROM spaces WHERE space_id = ?1", [space_id])
+
+        # Commit transaction
+        case Exqlite.Sqlite3.execute(state.db, "COMMIT") do
+          :ok -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Private helper to execute DELETE queries
+  defp delete_query(db, query, params) do
+    case Exqlite.Sqlite3.prepare(db, query) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, params)
+        Exqlite.Sqlite3.step(db, stmt)
+        :ok
+
+      {:error, _reason} ->
+        :ok
+    end
+  end
+
+  # Private helper to fetch all space rows
+  defp fetch_all_spaces(db, stmt, acc \\ []) do
+    case Exqlite.Sqlite3.step(db, stmt) do
+      {:row, [space_id, space_name, metadata_json]} ->
+        metadata =
+          if metadata_json do
+            Jason.decode!(metadata_json)
+          else
+            nil
+          end
+
+        space = %Ramax.Space{
+          space_id: space_id,
+          space_name: space_name,
+          metadata: metadata
+        }
+
+        fetch_all_spaces(db, stmt, [space | acc])
+
+      :done ->
+        Enum.reverse(acc)
+
+      {:error, _reason} ->
+        Enum.reverse(acc)
+    end
+  end
 end
