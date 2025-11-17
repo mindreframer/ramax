@@ -132,7 +132,7 @@ defmodule PState.E2EMigrationTest do
       pstate = put_in(pstate["base_card:card1"], old_card)
       pstate = %{pstate | cache: %{}}
 
-      {:ok, migrated} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
+      {:ok, migrated, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
 
       assert is_map(migrated.translations)
       assert migrated.translations["trans1"] == %Ref{key: "translation:trans1"}
@@ -163,7 +163,7 @@ defmodule PState.E2EMigrationTest do
       pstate = put_in(pstate["base_card:card1"], old_card)
       pstate = %{pstate | cache: %{}}
 
-      {time1_us, {:ok, result1}} =
+      {time1_us, {:ok, result1, _}} =
         :timer.tc(fn -> Internal.fetch_and_auto_migrate(pstate, "base_card:card1") end)
 
       assert is_map(result1.translations)
@@ -171,7 +171,7 @@ defmodule PState.E2EMigrationTest do
       Process.sleep(200)
       pstate = %{pstate | cache: %{}}
 
-      {time2_us, {:ok, result2}} =
+      {time2_us, {:ok, result2, _}} =
         :timer.tc(fn -> Internal.fetch_and_auto_migrate(pstate, "base_card:card1") end)
 
       assert result1.translations == result2.translations
@@ -218,9 +218,9 @@ defmodule PState.E2EMigrationTest do
       pstate = put_in(pstate["base_card:card3"], partial_card)
       pstate = %{pstate | cache: %{}}
 
-      {:ok, result1} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
-      {:ok, result2} = Internal.fetch_and_auto_migrate(pstate, "base_card:card2")
-      {:ok, result3} = Internal.fetch_and_auto_migrate(pstate, "base_card:card3")
+      {:ok, result1, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
+      {:ok, result2, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card2")
+      {:ok, result3, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card3")
 
       assert is_map(result1.translations)
       assert is_map(result2.translations)
@@ -248,7 +248,7 @@ defmodule PState.E2EMigrationTest do
 
       pstate = put_in(pstate["base_card:card1"], old_card)
 
-      {:ok, migrated} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
+      {:ok, migrated, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
       assert is_map(migrated.translations)
 
       new_card = %{
@@ -261,10 +261,10 @@ defmodule PState.E2EMigrationTest do
       pstate = put_in(pstate["base_card:card2"], new_card)
       pstate = %{pstate | cache: %{}}
 
-      {:ok, still_works} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
+      {:ok, still_works, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
       assert is_map(still_works.translations)
 
-      {:ok, new_data} = Internal.fetch_and_auto_migrate(pstate, "base_card:card2")
+      {:ok, new_data, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card2")
       assert new_data.translations["t2"] == %Ref{key: "translation:t2"}
 
       GenServer.stop(writer_pid)
@@ -350,7 +350,9 @@ defmodule PState.E2EMigrationTest do
       {duration_us, results} =
         :timer.tc(fn ->
           Enum.map(1..1500, fn i ->
-            {:ok, migrated} = Internal.fetch_and_auto_migrate(pstate, "base_card:card#{i}")
+            {:ok, migrated, _migrated?} =
+              Internal.fetch_and_auto_migrate(pstate, "base_card:card#{i}")
+
             migrated
           end)
         end)
@@ -406,7 +408,7 @@ defmodule PState.E2EMigrationTest do
       writer_pid2 = start_migration_writer(pstate2)
 
       pstate2 = %{pstate2 | cache: %{}}
-      {:ok, restored} = Internal.fetch_and_auto_migrate(pstate2, "base_card:card1")
+      {:ok, restored, _migrated?} = Internal.fetch_and_auto_migrate(pstate2, "base_card:card1")
 
       # Verify data persisted (keys might be strings)
       front = Map.get(restored, :front) || Map.get(restored, "front")
@@ -442,7 +444,7 @@ defmodule PState.E2EMigrationTest do
       pstate = put_in(pstate["base_card:card1"], complex_card)
       pstate = %{pstate | cache: %{}}
 
-      {:ok, migrated} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
+      {:ok, migrated, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
 
       assert is_map(migrated.translations)
       assert migrated.translations["t1"] == %Ref{key: "translation:t1"}
@@ -542,7 +544,7 @@ defmodule PState.E2EMigrationTest do
 
       pstate = %{pstate | cache: %{}}
 
-      {first_read_us, {:ok, first_card}} =
+      {first_read_us, {:ok, first_card, _}} =
         :timer.tc(fn -> Internal.fetch_and_auto_migrate(pstate, "base_card:card500") end)
 
       first_read_ms = first_read_us / 1000
@@ -553,7 +555,7 @@ defmodule PState.E2EMigrationTest do
       Process.sleep(300)
       pstate = %{pstate | cache: %{}}
 
-      {second_read_us, {:ok, second_card}} =
+      {second_read_us, {:ok, second_card, _}} =
         :timer.tc(fn -> Internal.fetch_and_auto_migrate(pstate, "base_card:card500") end)
 
       second_read_ms = second_read_us / 1000

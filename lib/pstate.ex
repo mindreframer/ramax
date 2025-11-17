@@ -198,17 +198,49 @@ defmodule PState do
     # Add current key to visited set
     new_visited = MapSet.put(visited, key)
 
-    case Internal.fetch_and_auto_migrate(pstate, key) do
-      {:ok, %Ref{key: ref_key}} ->
+    # Only emit telemetry for top-level fetch (not recursive refs)
+    start_time = System.monotonic_time(:microsecond)
+    from_cache? = Map.has_key?(pstate.cache, key)
+
+    # Emit cache hit/miss telemetry
+    if MapSet.size(visited) == 0 do
+      :telemetry.execute([:pstate, :cache], %{hit?: if(from_cache?, do: 1, else: 0)}, %{
+        key: key
+      })
+    end
+
+    result = Internal.fetch_and_auto_migrate(pstate, key)
+
+    # Emit fetch telemetry only for top-level fetch
+    if MapSet.size(visited) == 0 do
+      duration = System.monotonic_time(:microsecond) - start_time
+
+      migrated? =
+        case result do
+          {:ok, _, migrated?} -> migrated?
+          _ -> false
+        end
+
+      metadata = %{
+        key: key,
+        migrated?: migrated?,
+        from_cache?: from_cache?
+      }
+
+      :telemetry.execute([:pstate, :fetch], %{duration: duration}, metadata)
+    end
+
+    case result do
+      {:ok, %Ref{key: ref_key}, _migrated?} ->
         # Auto-resolve reference recursively
         fetch_with_visited(pstate, ref_key, new_visited)
 
-      {:ok, value} when is_map(value) ->
+      {:ok, value, _migrated?} when is_map(value) ->
         # Recursively resolve any refs in the map values
         resolved_value = resolve_nested_refs(pstate, value, new_visited)
         {:ok, resolved_value}
 
-      {:ok, value} ->
+      {:ok, value, _migrated?} ->
         {:ok, value}
 
       :error ->

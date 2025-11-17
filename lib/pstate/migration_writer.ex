@@ -117,9 +117,16 @@ defmodule PState.MigrationWriter do
   def handle_cast({:queue, key, value}, state) do
     new_queue = [{key, value} | state.queue]
 
+    # Emit queue telemetry
+    :telemetry.execute(
+      [:pstate, :migration_writer, :queue],
+      %{queue_size: length(new_queue)},
+      %{key: key}
+    )
+
     # Auto-flush if batch size reached
     if length(new_queue) >= state.batch_size do
-      do_flush(state.pstate, new_queue)
+      do_flush(state.pstate, new_queue, :batch_size)
       {:noreply, %{state | queue: []}}
     else
       {:noreply, %{state | queue: new_queue}}
@@ -128,27 +135,38 @@ defmodule PState.MigrationWriter do
 
   @impl true
   def handle_call(:flush, _from, state) do
-    do_flush(state.pstate, state.queue)
+    do_flush(state.pstate, state.queue, :manual)
     {:reply, :ok, %{state | queue: []}}
   end
 
   @impl true
   def handle_info(:flush_timer, state) do
-    do_flush(state.pstate, state.queue)
+    do_flush(state.pstate, state.queue, :timer)
     schedule_flush(state.flush_interval)
     {:noreply, %{state | queue: []}}
   end
 
   # Private Helpers
 
-  defp do_flush(_pstate, []), do: :ok
+  defp do_flush(_pstate, [], _trigger), do: :ok
 
-  defp do_flush(pstate, queue) do
+  defp do_flush(pstate, queue, trigger) do
+    start_time = System.monotonic_time(:microsecond)
+
     # Reverse queue to maintain insertion order
     entries = Enum.reverse(queue)
 
     # Use multi_put for batch write
     PState.Internal.multi_put(pstate, entries)
+
+    duration = System.monotonic_time(:microsecond) - start_time
+
+    # Emit flush telemetry
+    :telemetry.execute(
+      [:pstate, :migration_writer, :flush],
+      %{duration: duration, count: length(entries)},
+      %{trigger: trigger}
+    )
   end
 
   defp schedule_flush(interval) do

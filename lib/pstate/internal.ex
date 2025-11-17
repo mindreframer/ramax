@@ -67,11 +67,18 @@ defmodule PState.Internal do
   """
   @spec put_and_invalidate(PState.t(), String.t(), term()) :: PState.t()
   def put_and_invalidate(%PState{} = pstate, key, value) when is_binary(key) do
+    start_time = System.monotonic_time(:microsecond)
+
     # Encode value for storage
     encoded = encode_value(value)
 
     # Write to adapter
     :ok = pstate.adapter.put(pstate.adapter_state, key, encoded)
+
+    duration = System.monotonic_time(:microsecond) - start_time
+
+    # Emit telemetry
+    :telemetry.execute([:pstate, :put], %{duration: duration}, %{key: key})
 
     # Update cache and invalidate ref_cache
     pstate
@@ -162,39 +169,68 @@ defmodule PState.Internal do
 
   If migration occurs, queues background write to MigrationWriter.
 
+  Returns `{:ok, value, migrated?}` or `:error`.
+
   ## Examples
 
       iex> # Without schema - uses old fetch_with_cache
       iex> pstate = %PState{schema: nil, ...}
       iex> PState.Internal.fetch_and_auto_migrate(pstate, "base_card:123")
-      {:ok, %{id: "123", ...}}
+      {:ok, %{id: "123", ...}, false}
 
       iex> # With schema - auto-migrates
       iex> pstate = %PState{schema: MySchema, ...}
       iex> PState.Internal.fetch_and_auto_migrate(pstate, "base_card:123")
-      {:ok, %{id: "123", metadata: %{notes: "migrated"}}}
+      {:ok, %{id: "123", metadata: %{notes: "migrated"}}, true}
   """
-  @spec fetch_and_auto_migrate(PState.t(), String.t()) :: {:ok, term()} | :error
+  @spec fetch_and_auto_migrate(PState.t(), String.t()) ::
+          {:ok, term(), boolean()} | :error
   def fetch_and_auto_migrate(%PState{} = pstate, key) when is_binary(key) do
+    start_time = System.monotonic_time(:microsecond)
+
     # No schema? Use old fetch_with_cache
-    if is_nil(pstate.schema) do
-      fetch_with_cache(pstate, key)
-    else
-      # Fetch raw data
-      with {:ok, raw_data} <- fetch_with_cache(pstate, key),
-           entity_type <- extract_entity_type(key),
-           field_specs <- pstate.schema.__schema__(:fields, entity_type) do
-        # Migrate if schema defined
-        {migrated_data, changed?} = migrate_entity(raw_data, field_specs)
-
-        # Queue background write if changed
-        if changed? do
-          queue_migration_write(key, migrated_data)
+    result =
+      if is_nil(pstate.schema) do
+        case fetch_with_cache(pstate, key) do
+          {:ok, value} -> {:ok, value, false}
+          :error -> :error
         end
+      else
+        # Fetch raw data
+        with {:ok, raw_data} <- fetch_with_cache(pstate, key),
+             entity_type <- extract_entity_type(key),
+             field_specs <- pstate.schema.__schema__(:fields, entity_type) do
+          # Migrate if schema defined
+          {migrated_data, changed?} = migrate_entity(raw_data, field_specs)
 
-        {:ok, migrated_data}
+          # Emit migration telemetry if changed
+          if changed? do
+            duration = System.monotonic_time(:microsecond) - start_time
+            fields_migrated = count_migrated_fields(raw_data, migrated_data, field_specs)
+
+            :telemetry.execute(
+              [:pstate, :migration],
+              %{duration: duration},
+              %{key: key, entity_type: entity_type, fields_migrated: fields_migrated}
+            )
+
+            # Queue background write
+            queue_migration_write(key, migrated_data)
+          end
+
+          {:ok, migrated_data, changed?}
+        end
       end
-    end
+
+    result
+  end
+
+  # Count how many fields were actually migrated
+  defp count_migrated_fields(raw_data, migrated_data, field_specs) do
+    Enum.count(field_specs, fn field_spec ->
+      field_name = field_spec.name
+      Map.get(raw_data, field_name) != Map.get(migrated_data, field_name)
+    end)
   end
 
   @doc """

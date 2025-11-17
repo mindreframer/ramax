@@ -162,7 +162,8 @@ defmodule PState.MigrationWriterTest do
     {:ok, _pid} = MigrationWriter.start_link(pstate: pstate, flush_interval: 100)
 
     # Fetch entity (should trigger migration and queue write)
-    {:ok, migrated} = PState.Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
+    {:ok, migrated, _migrated?} =
+      PState.Internal.fetch_and_auto_migrate(pstate, "base_card:card1")
 
     # Verify migration occurred
     assert migrated.metadata == %{notes: "old_notes"}

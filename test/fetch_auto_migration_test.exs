@@ -69,7 +69,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       assert data.id == "123"
       assert data.front == "hello"
       assert data.back == "world"
@@ -99,7 +99,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       # No migration - data stays in old format
       assert data.metadata == "old string format"
       assert data.deck == "deck123"
@@ -124,7 +124,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       assert data.id == "123"
       assert data.front == "hello"
       assert data.back == "world"
@@ -146,7 +146,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "host_card:456")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       assert data.id == "456"
       assert data.base_card == PState.Ref.new(:base_card, "123")
     end
@@ -170,7 +170,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       # metadata should be migrated from string to map
       assert data.metadata == %{notes: "old string notes"}
       assert data.deck == PState.Ref.new(:base_deck, "deck1")
@@ -193,7 +193,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       # deck should be migrated from string to ref
       assert data.deck == PState.Ref.new(:base_deck, "deck123")
       assert data.metadata == %{notes: "already migrated"}
@@ -216,7 +216,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       # Both fields should be migrated
       assert data.metadata == %{notes: "old string notes"}
       assert data.deck == PState.Ref.new(:base_deck, "deck123")
@@ -241,7 +241,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       assert data.metadata == %{notes: "new format"}
       assert data.deck == PState.Ref.new(:base_deck, "deck1")
     end
@@ -263,7 +263,7 @@ defmodule PState.FetchAutoMigrationTest do
 
       result = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
 
-      assert {:ok, data} = result
+      assert {:ok, data, _} = result
       # Data should remain exactly the same
       assert data == %{
                id: "123",
@@ -329,17 +329,17 @@ defmodule PState.FetchAutoMigrationTest do
 
       # First read - should migrate
       result1 = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
-      assert {:ok, data1} = result1
+      assert {:ok, data1, _} = result1
       assert data1.metadata == %{notes: "old string"}
 
       # Second read - should migrate again (synchronous migration on every read)
       result2 = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
-      assert {:ok, data2} = result2
+      assert {:ok, data2, _} = result2
       assert data2.metadata == %{notes: "old string"}
 
       # Third read - should migrate again
       result3 = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
-      assert {:ok, data3} = result3
+      assert {:ok, data3, _} = result3
       assert data3.metadata == %{notes: "old string"}
     end
 
@@ -358,7 +358,7 @@ defmodule PState.FetchAutoMigrationTest do
         )
 
       # Fetch and migrate
-      {:ok, migrated_data} = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
+      {:ok, migrated_data, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
       assert migrated_data.metadata == %{notes: "old string"}
       assert migrated_data.deck == PState.Ref.new(:base_deck, "deck123")
 
@@ -380,15 +380,15 @@ defmodule PState.FetchAutoMigrationTest do
         )
 
       # Read first key
-      {:ok, data1} = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
+      {:ok, data1, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
       assert data1.metadata == %{notes: "old1"}
 
       # Read second key
-      {:ok, data2} = Internal.fetch_and_auto_migrate(pstate, "base_card:456")
+      {:ok, data2, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:456")
       assert data2.metadata == %{notes: "old2"}
 
       # Read first key again - migrates again
-      {:ok, data1_again} = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
+      {:ok, data1_again, _migrated?} = Internal.fetch_and_auto_migrate(pstate, "base_card:123")
       assert data1_again.metadata == %{notes: "old1"}
     end
   end
