@@ -67,10 +67,6 @@ defmodule PState.EntityMacroTest do
       assert :count in field_names
     end
 
-    # TODO RMX002_2A: Migration function storage not yet working
-    # The issue is that migration functions cannot be escaped into AST
-    # This will be addressed in RMX002_4A when implementing field migrations properly
-    @tag :skip
     test "entity/2 block can contain complex field definitions" do
       defmodule ComplexBlockSchema do
         use PState.Schema
@@ -80,10 +76,10 @@ defmodule PState.EntityMacroTest do
           field(:name, :string, default: "Anonymous")
 
           field :metadata, :map do
-            fn
+            migrate(fn
               str when is_binary(str) -> %{note: str}
               map when is_map(map) -> map
-            end
+            end)
           end
         end
       end
