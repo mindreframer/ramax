@@ -154,6 +154,48 @@ defmodule PState.Internal do
     String.to_existing_atom(entity_type)
   end
 
+  @doc """
+  Fetch and auto-migrate based on schema.
+
+  If no schema is present, falls back to `fetch_with_cache/2`.
+  If schema is present, fetches raw data and applies migration if needed.
+
+  SYNCHRONOUS only - no background write yet (deferred to RMX004).
+  Migration happens on EVERY read.
+
+  ## Examples
+
+      iex> # Without schema - uses old fetch_with_cache
+      iex> pstate = %PState{schema: nil, ...}
+      iex> PState.Internal.fetch_and_auto_migrate(pstate, "base_card:123")
+      {:ok, %{id: "123", ...}}
+
+      iex> # With schema - auto-migrates
+      iex> pstate = %PState{schema: MySchema, ...}
+      iex> PState.Internal.fetch_and_auto_migrate(pstate, "base_card:123")
+      {:ok, %{id: "123", metadata: %{notes: "migrated"}}}
+  """
+  @spec fetch_and_auto_migrate(PState.t(), String.t()) :: {:ok, term()} | :error
+  def fetch_and_auto_migrate(%PState{} = pstate, key) when is_binary(key) do
+    # No schema? Use old fetch_with_cache
+    if is_nil(pstate.schema) do
+      fetch_with_cache(pstate, key)
+    else
+      # Fetch raw data
+      with {:ok, raw_data} <- fetch_with_cache(pstate, key),
+           entity_type <- extract_entity_type(key),
+           field_specs <- pstate.schema.__schema__(:fields, entity_type) do
+        # Migrate if schema defined
+        {migrated_data, _changed?} = migrate_entity(raw_data, field_specs)
+
+        # NOTE: No background write yet (that's RMX004)
+        # For now, migration happens every read (synchronous)
+
+        {:ok, migrated_data}
+      end
+    end
+  end
+
   # Private helper functions
 
   @doc false
