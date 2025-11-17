@@ -33,9 +33,9 @@ defmodule EventStore do
       # Query events for an entity
       {:ok, events} = EventStore.get_events(store, "base_card:123")
 
-      # Stream all events (memory efficient)
+      # Stream all events (memory efficient, yields individual events)
       stream = EventStore.stream_all_events(store, batch_size: 1000)
-      Enum.take(stream, 10)
+      stream |> Enum.take(10) |> Enum.each(&IO.inspect/1)
 
   ## Event Structure
 
@@ -188,14 +188,14 @@ defmodule EventStore do
   @doc """
   Stream all events from the event store.
 
-  Returns a lazy enumerable that yields events in batches to avoid
-  loading the entire event log into memory. Useful for processing
-  large event logs (350k+ events).
+  Returns a lazy enumerable that yields individual events one at a time,
+  fetching them in batches internally to avoid loading the entire event
+  log into memory. Useful for processing large event logs (350k+ events).
 
   ## Options
 
   - `:from_sequence` - Only stream events with event_id > this value (default: 0)
-  - `:batch_size` - Number of events to fetch per batch (default: 1000)
+  - `:batch_size` - Number of events to fetch per internal batch (default: 1000)
 
   ## Examples
 
@@ -203,13 +203,13 @@ defmodule EventStore do
       stream = EventStore.stream_all_events(store)
       Enum.take(stream, 100)
 
-      # Stream with custom batch size
+      # Stream with custom batch size for internal fetching
       stream = EventStore.stream_all_events(store, batch_size: 5000)
-      Enum.each(stream, fn events -> IO.inspect(length(events)) end)
+      Enum.each(stream, fn event -> IO.inspect(event.metadata.event_id) end)
 
       # Stream from a specific sequence
       stream = EventStore.stream_all_events(store, from_sequence: 10000)
-      total = Enum.reduce(stream, 0, fn batch, acc -> acc + length(batch) end)
+      total = Enum.count(stream)
   """
   @spec stream_all_events(t(), keyword()) :: Enumerable.t()
   def stream_all_events(store, opts \\ []) do
