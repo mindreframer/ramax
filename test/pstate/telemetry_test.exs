@@ -5,6 +5,22 @@ defmodule PState.TelemetryTest do
 
   @test_table :pstate_telemetry_test
 
+  # Helper module for telemetry handlers
+  defmodule TelemetryHelper do
+    def handle_event(event, measurements, metadata, config) do
+      # config contains the test_pid
+      send(config.test_pid, {:telemetry, event, measurements, metadata})
+    end
+
+    def handle_metadata(_event, _measurements, metadata, config) do
+      send(config.test_pid, {:metadata, metadata})
+    end
+
+    def handle_put_metadata(_event, _measurements, metadata, config) do
+      send(config.test_pid, {:put_metadata, metadata})
+    end
+  end
+
   setup do
     # Clean up any existing handlers
     :telemetry.list_handlers([])
@@ -35,10 +51,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-fetch-handler",
         [:pstate, :fetch],
-        fn event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry, event, measurements, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_event/4,
+        %{test_pid: test_pid}
       )
 
       # Setup test data
@@ -72,10 +86,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-cache-handler",
         [:pstate, :cache],
-        fn event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry, event, measurements, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_event/4,
+        %{test_pid: test_pid}
       )
 
       # Setup test data
@@ -121,10 +133,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-migration-handler",
         [:pstate, :migration],
-        fn event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry, event, measurements, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_event/4,
+        %{test_pid: test_pid}
       )
 
       # Write old format data (using Internal to bypass schema)
@@ -169,10 +179,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-no-migration-handler",
         [:pstate, :migration],
-        fn event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry, event, measurements, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_event/4,
+        %{test_pid: test_pid}
       )
 
       # Write data in current format
@@ -198,10 +206,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-flush-handler",
         [:pstate, :migration_writer, :flush],
-        fn event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry, event, measurements, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_event/4,
+        %{test_pid: test_pid}
       )
 
       # Start migration writer with small batch size
@@ -238,10 +244,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-manual-flush-handler",
         [:pstate, :migration_writer, :flush],
-        fn event, measurements, metadata, _config ->
-          send(test_pid, {:telemetry, event, measurements, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_event/4,
+        %{test_pid: test_pid}
       )
 
       {:ok, _pid} = MigrationWriter.start_link(pstate: pstate, batch_size: 100)
@@ -270,10 +274,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-metadata-handler",
         [:pstate, :fetch],
-        fn _event, _measurements, metadata, _config ->
-          send(test_pid, {:metadata, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_metadata/4,
+        %{test_pid: test_pid}
       )
 
       # Write data directly to adapter (bypass cache)
@@ -302,10 +304,8 @@ defmodule PState.TelemetryTest do
       :telemetry.attach(
         "test-put-handler",
         [:pstate, :put],
-        fn _event, _measurements, metadata, _config ->
-          send(test_pid, {:put_metadata, metadata})
-        end,
-        nil
+        &TelemetryHelper.handle_put_metadata/4,
+        %{test_pid: test_pid}
       )
 
       # Perform put

@@ -62,7 +62,7 @@ defmodule PState.Telemetry do
               [:pstate, :fetch],
               [:pstate, :migration]
             ],
-            &handle_event/4,
+            &__MODULE__.handle_event/4,
             nil
           )
         end
@@ -104,7 +104,7 @@ defmodule PState.Telemetry do
       [:pstate, :migration_writer, :flush]
     ]
 
-    :telemetry.attach_many("pstate-default-handlers", events, &handle_event/4, nil)
+    :telemetry.attach_many("pstate-default-handlers", events, &__MODULE__.handle_event/4, nil)
   end
 
   @doc """
