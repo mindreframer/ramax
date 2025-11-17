@@ -49,7 +49,7 @@ defmodule PState.Adapters.SQLite do
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS #{table_name} (
       key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
+      value BLOB NOT NULL,
       updated_at INTEGER DEFAULT (strftime('%s', 'now'))
     )
     """

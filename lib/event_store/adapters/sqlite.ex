@@ -45,7 +45,7 @@ defmodule EventStore.Adapters.SQLite do
           event_id INTEGER PRIMARY KEY AUTOINCREMENT,
           entity_id TEXT NOT NULL,
           event_type TEXT NOT NULL,
-          payload TEXT NOT NULL,
+          payload BLOB NOT NULL,
           timestamp INTEGER NOT NULL,
           causation_id INTEGER,
           correlation_id TEXT,
