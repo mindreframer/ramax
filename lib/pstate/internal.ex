@@ -102,6 +102,58 @@ defmodule PState.Internal do
     |> invalidate_ref_cache(key)
   end
 
+  @doc """
+  Migrate entity data field-by-field.
+
+  Iterates through field specs and applies migration functions to fields that need migration.
+  Returns a tuple of {migrated_data, changed?} where changed? indicates if any field was migrated.
+
+  ## Examples
+
+      iex> field_specs = [%PState.Schema.Field{name: :metadata, type: :map, migrate_fn: fn str -> %{notes: str} end}]
+      iex> data = %{metadata: "old_string"}
+      iex> PState.Internal.migrate_entity(data, field_specs)
+      {%{metadata: %{notes: "old_string"}}, true}
+
+      iex> field_specs = [%PState.Schema.Field{name: :front, type: :string, migrate_fn: nil}]
+      iex> data = %{front: "hello"}
+      iex> PState.Internal.migrate_entity(data, field_specs)
+      {%{front: "hello"}, false}
+  """
+  @spec migrate_entity(map(), [PState.Schema.Field.t()]) :: {map(), boolean()}
+  def migrate_entity(data, field_specs) do
+    Enum.reduce(field_specs, {data, false}, fn field_spec, {acc_data, changed?} ->
+      field_name = field_spec.name
+      current_value = Map.get(acc_data, field_name)
+
+      if PState.Migration.needs_migration?(current_value, field_spec) do
+        new_value = field_spec.migrate_fn.(current_value)
+        {Map.put(acc_data, field_name, new_value), true}
+      else
+        {acc_data, changed?}
+      end
+    end)
+  end
+
+  @doc """
+  Extract entity type from key.
+
+  Splits the key on ":" and returns the entity type as an atom.
+
+  ## Examples
+
+      iex> PState.Internal.extract_entity_type("base_card:abc123")
+      :base_card
+
+      iex> PState.Internal.extract_entity_type("host_card:550e8400-e29b-41d4-a716-446655440000")
+      :host_card
+  """
+  @spec extract_entity_type(String.t()) :: atom()
+  def extract_entity_type(key) do
+    [entity_type, _id] = String.split(key, ":", parts: 2)
+    String.to_existing_atom(entity_type)
+  end
+
   # Private helper functions
 
   @doc false
