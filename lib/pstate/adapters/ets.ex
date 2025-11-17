@@ -92,4 +92,29 @@ defmodule PState.Adapters.ETS do
   rescue
     error -> {:error, error}
   end
+
+  @impl true
+  def multi_get(state, keys) when is_list(keys) do
+    results =
+      keys
+      |> Enum.reduce(%{}, fn key, acc ->
+        case :ets.lookup(state.table, key) do
+          [{^key, value}] -> Map.put(acc, key, value)
+          [] -> acc
+        end
+      end)
+
+    {:ok, results}
+  rescue
+    error -> {:error, error}
+  end
+
+  @impl true
+  def multi_put(state, entries) when is_list(entries) do
+    # ETS insert can handle a list of tuples efficiently
+    true = :ets.insert(state.table, entries)
+    :ok
+  rescue
+    error -> {:error, error}
+  end
 end
