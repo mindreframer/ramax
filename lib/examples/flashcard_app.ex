@@ -97,8 +97,11 @@ defmodule FlashcardApp do
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
-    # Add flashcard-specific event applicator to opts
-    opts = Keyword.put_new(opts, :event_applicator, FlashcardEventApplicator)
+    # Add flashcard-specific configuration to opts
+    opts =
+      opts
+      |> Keyword.put_new(:event_applicator, FlashcardEventApplicator)
+      |> Keyword.put_new(:entity_id_extractor, &FlashcardEntityId.extract/1)
 
     store = ContentStore.new(opts)
     %__MODULE__{store: store}

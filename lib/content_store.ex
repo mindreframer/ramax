@@ -92,6 +92,10 @@ defmodule ContentStore do
   - `:pstate_opts` - Options to pass to PState adapter (default: `[]`)
   - `:root_key` - Root key for PState (default: `"content:root"`)
   - `:schema` - PState schema (optional)
+  - `:event_applicator` - Module implementing event application logic (optional)
+  - `:entity_id_extractor` - Function to extract entity ID from event payload (optional)
+    - Receives event payload and returns entity ID string
+    - Default: Returns root_key for all events
 
   ## Examples
 
@@ -110,14 +114,17 @@ defmodule ContentStore do
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     # Store config for rebuild
+    root_key = Keyword.get(opts, :root_key, "content:root")
+
     config = %{
       event_adapter: Keyword.get(opts, :event_adapter, EventStore.Adapters.ETS),
       event_opts: Keyword.get(opts, :event_opts, []),
       pstate_adapter: Keyword.get(opts, :pstate_adapter, PState.Adapters.ETS),
       pstate_opts: Keyword.get(opts, :pstate_opts, []),
-      root_key: Keyword.get(opts, :root_key, "content:root"),
+      root_key: root_key,
       schema: Keyword.get(opts, :schema),
-      event_applicator: Keyword.get(opts, :event_applicator)
+      event_applicator: Keyword.get(opts, :event_applicator),
+      entity_id_extractor: Keyword.get(opts, :entity_id_extractor, fn _payload -> root_key end)
     }
 
     # Initialize event store
@@ -190,7 +197,13 @@ defmodule ContentStore do
     case command_fn.(store.pstate, params) do
       {:ok, event_specs} ->
         # 2. Append events to event store
-        {event_ids, updated_event_store} = append_events(store.event_store, event_specs, params)
+        {event_ids, updated_event_store} =
+          append_events(
+            store.event_store,
+            event_specs,
+            params,
+            store.config.entity_id_extractor
+          )
 
         # 3. Fetch events back with metadata
         events = fetch_events(updated_event_store, event_ids)
@@ -336,9 +349,9 @@ defmodule ContentStore do
 
   # Private Helpers
 
-  defp append_events(event_store, event_specs, params) do
+  defp append_events(event_store, event_specs, params, entity_id_extractor) do
     Enum.reduce(event_specs, {[], event_store}, fn {event_type, payload}, {ids, es} ->
-      entity_id = extract_entity_id(payload)
+      entity_id = entity_id_extractor.(payload)
 
       {:ok, event_id, new_es} =
         EventStore.append(
@@ -359,8 +372,4 @@ defmodule ContentStore do
       event
     end)
   end
-
-  defp extract_entity_id(%{card_id: id}), do: "card:#{id}"
-  defp extract_entity_id(%{deck_id: id}), do: "deck:#{id}"
-  defp extract_entity_id(_), do: "content:root"
 end

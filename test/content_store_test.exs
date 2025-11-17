@@ -4,9 +4,19 @@ defmodule ContentStoreTest do
   alias ContentStore
   alias FlashcardCommand, as: Command
 
+  # Helper to create store with flashcard-specific config
+  defp new_flashcard_store(opts \\ []) do
+    opts =
+      opts
+      |> Keyword.put_new(:event_applicator, FlashcardEventApplicator)
+      |> Keyword.put_new(:entity_id_extractor, &FlashcardEntityId.extract/1)
+
+    ContentStore.new(opts)
+  end
+
   describe "new/1" do
     test "RMX006_3A_T1: initializes both stores" do
-      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
+      store = new_flashcard_store()
 
       assert %ContentStore{} = store
       assert %EventStore{} = store.event_store
@@ -15,7 +25,7 @@ defmodule ContentStoreTest do
 
     test "RMX006_3A_T2: accepts custom adapters" do
       store =
-        ContentStore.new(
+        new_flashcard_store(
           event_adapter: EventStore.Adapters.ETS,
           event_opts: [table_name: :custom_events],
           pstate_adapter: PState.Adapters.ETS,
@@ -31,7 +41,7 @@ defmodule ContentStoreTest do
 
   describe "execute/3" do
     setup do
-      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
+      store = new_flashcard_store()
       %{store: store}
     end
 
@@ -109,7 +119,7 @@ defmodule ContentStoreTest do
 
   describe "rebuild_pstate/2" do
     setup do
-      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
+      store = new_flashcard_store()
 
       # Create a deck and some cards
       {:ok, _, store} =
@@ -165,10 +175,9 @@ defmodule ContentStoreTest do
 
     test "RMX006_3A_T11: rebuild with 1000 events" do
       store =
-        ContentStore.new(
+        new_flashcard_store(
           event_opts: [table_name: :events_1000_test],
-          pstate_opts: [table_name: :pstate_1000_test],
-          event_applicator: FlashcardEventApplicator
+          pstate_opts: [table_name: :pstate_1000_test]
         )
 
       # Create a deck
@@ -233,7 +242,7 @@ defmodule ContentStoreTest do
 
   describe "catchup_pstate/2" do
     setup do
-      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
+      store = new_flashcard_store()
 
       # Create initial data
       {:ok, _, store} =
@@ -321,7 +330,7 @@ defmodule ContentStoreTest do
 
   describe "complete workflow" do
     test "RMX006_3A_T16: execute → query" do
-      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
+      store = new_flashcard_store()
 
       # Execute: Create deck
       {:ok, _, store} =
@@ -363,7 +372,7 @@ defmodule ContentStoreTest do
     end
 
     test "RMX006_3A_T17: execute → rebuild → query" do
-      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
+      store = new_flashcard_store()
 
       # Create data
       {:ok, _, store} =
