@@ -1,10 +1,13 @@
 defmodule PState.Adapters.SQLiteTest do
-  use ExUnit.Case, async: false  # Run tests serially to avoid SQLite database locking
+  # Run tests serially to avoid SQLite database locking
+  use ExUnit.Case, async: false
   alias PState.Adapters.SQLite
 
   setup do
     # Create unique DB file for each test using timestamp + random + pid
-    unique_id = "#{System.system_time(:nanosecond)}_#{:rand.uniform(999999)}_#{:erlang.phash2(self())}"
+    unique_id =
+      "#{System.system_time(:nanosecond)}_#{:rand.uniform(999_999)}_#{:erlang.phash2(self())}"
+
     db_path = "/tmp/pstate_test_#{unique_id}.db"
 
     on_exit(fn ->

@@ -32,7 +32,8 @@ defmodule AccessTest do
       pstate = put_in(pstate["source:123"], Ref.new("target:456"))
 
       # Fetch source - should auto-resolve to target
-      assert {:ok, %{id: "456", data: "resolved"}} = PState.get_resolved(pstate, "source:123", depth: :infinity)
+      assert {:ok, %{id: "456", data: "resolved"}} =
+               PState.get_resolved(pstate, "source:123", depth: :infinity)
     end
 
     test "RMX001_3C_T3: resolves nested refs (A→B→C)", %{pstate: pstate} do
@@ -42,7 +43,8 @@ defmodule AccessTest do
       pstate = put_in(pstate["entity:A"], Ref.new("entity:B"))
 
       # Fetch A - should resolve through B to C
-      assert {:ok, %{id: "C", value: "final"}} = PState.get_resolved(pstate, "entity:A", depth: :infinity)
+      assert {:ok, %{id: "C", value: "final"}} =
+               PState.get_resolved(pstate, "entity:A", depth: :infinity)
     end
 
     test "RMX001_3C_T4: returns :error for missing key", %{pstate: pstate} do
@@ -220,7 +222,8 @@ defmodule AccessTest do
       pstate = put_in(pstate["target:123"], %{data: "resolved"})
 
       # Fetch should resolve
-      assert {:ok, %{data: "resolved"}} = PState.get_resolved(pstate, "source:1", depth: :infinity)
+      assert {:ok, %{data: "resolved"}} =
+               PState.get_resolved(pstate, "source:1", depth: :infinity)
     end
   end
 

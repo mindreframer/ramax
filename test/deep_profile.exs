@@ -32,22 +32,31 @@ defmodule DeepProfiler do
     params = %{card_id: "card-#{card_id}", front: "New", back: "New"}
 
     IO.puts("1. Calling Command.update_card...")
-    {time_command, {:ok, event_specs}} = :timer.tc(fn ->
-      Command.update_card(app.store.pstate, params)
-    end)
+
+    {time_command, {:ok, event_specs}} =
+      :timer.tc(fn ->
+        Command.update_card(app.store.pstate, params)
+      end)
+
     IO.puts("   Time: #{Float.round(time_command / 1000, 3)}ms")
     IO.puts("   Events generated: #{length(event_specs)}")
 
     IO.puts("\n2. Appending events to store...")
-    {time_append, {event_ids, updated_event_store}} = :timer.tc(fn ->
-      ContentStore.append_events(app.store.event_store, event_specs, params)
-    end)
+
+    {time_append, {event_ids, updated_event_store}} =
+      :timer.tc(fn ->
+        ContentStore.append_events(app.store.event_store, event_specs, params)
+      end)
+
     IO.puts("   Time: #{Float.round(time_append / 1000, 3)}ms")
 
     IO.puts("\n3. Fetching events back...")
-    {time_fetch, events} = :timer.tc(fn ->
-      ContentStore.fetch_events(updated_event_store, event_ids)
-    end)
+
+    {time_fetch, events} =
+      :timer.tc(fn ->
+        ContentStore.fetch_events(updated_event_store, event_ids)
+      end)
+
     IO.puts("   Time: #{Float.round(time_fetch / 1000, 3)}ms")
 
     IO.puts("\n4. Applying events to PState...")
@@ -55,9 +64,12 @@ defmodule DeepProfiler do
 
     Enum.each(events, fn event ->
       IO.puts("   - Applying #{event.metadata.event_type}...")
-      {time_apply, _} = :timer.tc(fn ->
-        EventApplicator.apply_event(app.store.pstate, event)
-      end)
+
+      {time_apply, _} =
+        :timer.tc(fn ->
+          EventApplicator.apply_event(app.store.pstate, event)
+        end)
+
       IO.puts("     Time: #{Float.round(time_apply / 1000, 3)}ms")
     end)
 
@@ -76,10 +88,11 @@ Enum.each([10, 50, 100, 200], fn card_count ->
   app = FlashcardApp.new()
   {:ok, app} = FlashcardApp.create_deck(app, "deck-1", "Test")
 
-  app = Enum.reduce(1..card_count, app, fn i, acc ->
-    {:ok, updated} = FlashcardApp.create_card(acc, "card-#{i}", "deck-1", "F#{i}", "B#{i}")
-    updated
-  end)
+  app =
+    Enum.reduce(1..card_count, app, fn i, acc ->
+      {:ok, updated} = FlashcardApp.create_card(acc, "card-#{i}", "deck-1", "F#{i}", "B#{i}")
+      updated
+    end)
 
   # Now trace a single update
   DeepProfiler.trace_update(app, div(card_count, 2))

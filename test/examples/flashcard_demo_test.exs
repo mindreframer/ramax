@@ -20,6 +20,9 @@ defmodule FlashcardDemoTest do
     File.rm_rf("#{pstate_db_path}-wal")
     File.rm_rf("#{pstate_db_path}-shm")
 
+    # Small delay to ensure file system cleanup completes
+    Process.sleep(10)
+
     # Clean up after test
     on_exit(fn ->
       File.rm_rf(event_db_path)
@@ -28,6 +31,8 @@ defmodule FlashcardDemoTest do
       File.rm_rf("#{event_db_path}-shm")
       File.rm_rf("#{pstate_db_path}-wal")
       File.rm_rf("#{pstate_db_path}-shm")
+      # Small delay after cleanup
+      Process.sleep(10)
     end)
 
     :ok

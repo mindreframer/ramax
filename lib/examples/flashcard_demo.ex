@@ -50,8 +50,13 @@ defmodule FlashcardDemo do
     event_db_path = "/tmp/flashcard_demo_events.db"
     pstate_db_path = "/tmp/flashcard_demo_pstate.db"
 
-    if File.exists?(event_db_path), do: File.rm!(event_db_path)
-    if File.exists?(pstate_db_path), do: File.rm!(pstate_db_path)
+    # Remove database files and WAL/SHM files
+    File.rm_rf(event_db_path)
+    File.rm_rf("#{event_db_path}-wal")
+    File.rm_rf("#{event_db_path}-shm")
+    File.rm_rf(pstate_db_path)
+    File.rm_rf("#{pstate_db_path}-wal")
+    File.rm_rf("#{pstate_db_path}-shm")
 
     :ok
   end
@@ -292,7 +297,7 @@ defmodule FlashcardDemo do
     # Rebuild PState from events
     IO.puts("🔄 Rebuilding PState from event store...")
 
-    {time_rebuild_prep, {deck_before_rebuild, cards_before_rebuild}} =
+    {_time_rebuild_prep, {deck_before_rebuild, cards_before_rebuild}} =
       :timer.tc(fn ->
         {:ok, deck} = FlashcardApp.get_deck(app, "spanish-101")
         {:ok, cards} = FlashcardApp.list_deck_cards(app, "spanish-101")
@@ -312,8 +317,8 @@ defmodule FlashcardDemo do
     # Verify data integrity
     if deck_before_rebuild == deck_after_rebuild and cards_before_rebuild == cards_after_rebuild do
       IO.puts(
-        "✓ Rebuild successful - data integrity verified! (verification took #{time_verify / 1000}ms)")
-      
+        "✓ Rebuild successful - data integrity verified! (verification took #{time_verify / 1000}ms)"
+      )
     else
       IO.puts("⚠️  Warning: Data mismatch after rebuild")
     end

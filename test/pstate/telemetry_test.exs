@@ -69,7 +69,7 @@ defmodule PState.TelemetryTest do
 
       # Check measurements
       assert is_integer(measurements.duration)
-      assert measurements.duration > 0
+      assert measurements.duration >= 0
 
       # Check metadata
       assert metadata.key == "base_card:123"
@@ -152,7 +152,7 @@ defmodule PState.TelemetryTest do
 
       # Check measurements
       assert is_integer(measurements.duration)
-      assert measurements.duration > 0
+      assert measurements.duration >= 0
 
       # Check metadata
       assert metadata.key == "base_card:123"

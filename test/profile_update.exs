@@ -10,10 +10,13 @@ IO.puts("Setting up test with 200 cards...")
 app = FlashcardApp.new()
 {:ok, app} = FlashcardApp.create_deck(app, "deck-1", "Test")
 
-app = Enum.reduce(1..200, app, fn i, acc ->
-  {:ok, updated} = FlashcardApp.create_card(acc, "card-#{i}", "deck-1", "Front #{i}", "Back #{i}")
-  updated
-end)
+app =
+  Enum.reduce(1..200, app, fn i, acc ->
+    {:ok, updated} =
+      FlashcardApp.create_card(acc, "card-#{i}", "deck-1", "Front #{i}", "Back #{i}")
+
+    updated
+  end)
 
 IO.puts("✓ Setup complete\n")
 
@@ -49,14 +52,15 @@ defmodule Profiler do
 end
 
 # Instrument the update flow
-{total_time, _} = :timer.tc(fn ->
-  # This is what FlashcardApp.update_card does internally
-  params = %{card_id: "card-1", front: "New Front", back: "New Back"}
+{total_time, _} =
+  :timer.tc(fn ->
+    # This is what FlashcardApp.update_card does internally
+    params = %{card_id: "card-1", front: "New Front", back: "New Back"}
 
-  Profiler.measure("Total update_card", fn ->
-    ContentStore.execute(app.store, &Command.update_card/2, params)
+    Profiler.measure("Total update_card", fn ->
+      ContentStore.execute(app.store, &Command.update_card/2, params)
+    end)
   end)
-end)
 
 IO.puts("\nTotal measured time: #{Float.round(total_time / 1000, 3)}ms")
 

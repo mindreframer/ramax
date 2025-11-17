@@ -16,12 +16,15 @@ app = FlashcardApp.new()
 {:ok, app} = FlashcardApp.create_deck(app, "deck-1", "Test")
 
 IO.puts("Creating 200 cards...")
-{time_create, app} = :timer.tc(fn ->
-  Enum.reduce(1..200, app, fn i, acc ->
-    {:ok, updated} = FlashcardApp.create_card(acc, "card-#{i}", "deck-1", "F#{i}", "B#{i}")
-    updated
+
+{time_create, app} =
+  :timer.tc(fn ->
+    Enum.reduce(1..200, app, fn i, acc ->
+      {:ok, updated} = FlashcardApp.create_card(acc, "card-#{i}", "deck-1", "F#{i}", "B#{i}")
+      updated
+    end)
   end)
-end)
+
 IO.puts("✓ Created 200 cards in #{Float.round(time_create / 1000, 2)}ms\n")
 
 # Now let's trace EXACTLY what happens in update
@@ -32,44 +35,58 @@ IO.puts("")
 params = %{card_id: "card-100", front: "Updated", back: "Updated"}
 
 IO.puts("STEP 1: Command.update_card (validates and generates events)")
-{time_cmd, result} = :timer.tc(fn ->
-  ContentStore.Command.update_card(app.store.pstate, params)
-end)
+
+{time_cmd, result} =
+  :timer.tc(fn ->
+    ContentStore.Command.update_card(app.store.pstate, params)
+  end)
+
 IO.puts("  Time: #{Float.round(time_cmd / 1000, 3)}ms")
 {:ok, event_specs} = result
 IO.puts("  Generated #{length(event_specs)} event(s)\n")
 
 IO.puts("STEP 2: Append events to EventStore")
-{time_append, {event_ids, updated_event_store}} = :timer.tc(fn ->
-  Enum.reduce(event_specs, {[], app.store.event_store}, fn {event_type, payload}, {ids, store} ->
-    {:ok, event_id, new_store} = EventStore.append(
-      store,
-      "card:#{params.card_id}",
-      event_type,
-      payload
-    )
-    {ids ++ [event_id], new_store}
+
+{time_append, {event_ids, updated_event_store}} =
+  :timer.tc(fn ->
+    Enum.reduce(event_specs, {[], app.store.event_store}, fn {event_type, payload},
+                                                             {ids, store} ->
+      {:ok, event_id, new_store} =
+        EventStore.append(
+          store,
+          "card:#{params.card_id}",
+          event_type,
+          payload
+        )
+
+      {ids ++ [event_id], new_store}
+    end)
   end)
-end)
+
 IO.puts("  Time: #{Float.round(time_append / 1000, 3)}ms\n")
 
 IO.puts("STEP 3: Fetch events back")
-{time_fetch, events} = :timer.tc(fn ->
-  Enum.map(event_ids, fn id ->
-    {:ok, event} = EventStore.get_event(updated_event_store, id)
-    event
+
+{time_fetch, events} =
+  :timer.tc(fn ->
+    Enum.map(event_ids, fn id ->
+      {:ok, event} = EventStore.get_event(updated_event_store, id)
+      event
+    end)
   end)
-end)
+
 IO.puts("  Time: #{Float.round(time_fetch / 1000, 3)}ms\n")
 
 IO.puts("STEP 4: Apply events to PState (THE CRITICAL PATH)")
+
 Enum.each(events, fn event ->
   IO.puts("  Applying: #{event.metadata.event_type}")
 
   # Time the ENTIRE apply_event call
-  {time_total, updated_pstate} = :timer.tc(fn ->
-    ContentStore.EventApplicator.apply_event(app.store.pstate, event)
-  end)
+  {time_total, updated_pstate} =
+    :timer.tc(fn ->
+      ContentStore.EventApplicator.apply_event(app.store.pstate, event)
+    end)
 
   IO.puts("    TOTAL time for apply_event: #{Float.round(time_total / 1000, 3)}ms")
 
