@@ -255,13 +255,18 @@ defmodule PState.Internal do
 
   defp encode_value(value), do: value
 
-  @doc false
-  defp decode_value(%Ref{} = ref), do: ref
+  @doc """
+  Decode a value from storage format.
 
-  defp decode_value(value) when is_map(value) do
+  Recursively decodes nested refs and values.
+  Used internally by PState and for preloading.
+  """
+  def decode_value(%Ref{} = ref), do: ref
+
+  def decode_value(value) when is_map(value) do
     # Recursively decode nested refs
     Map.new(value, fn {k, v} -> {k, decode_value(v)} end)
   end
 
-  defp decode_value(value), do: value
+  def decode_value(value), do: value
 end

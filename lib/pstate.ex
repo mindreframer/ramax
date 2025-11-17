@@ -249,6 +249,164 @@ defmodule PState do
 
   defp resolve_nested_refs(_pstate, value, _visited), do: value
 
+  # Preloading API
+
+  @doc """
+  Preload nested data efficiently using batch fetching.
+
+  Fetches all referenced entities in a single batch operation and warms the cache.
+  This is useful for avoiding N+1 queries when you know you'll need to access
+  multiple related entities.
+
+  ## Path Specifications
+
+  Paths can be specified as:
+  - Single atom: `:cards` - preloads all refs in the `cards` field
+  - List of atoms: `[:cards, :translations]` - preloads multiple fields
+  - Keyword list: `[cards: [:translations]]` - preloads nested paths
+
+  ## Examples
+
+      # Preload all cards for a deck
+      pstate = PState.preload(pstate, "base_deck:uuid", [:cards])
+
+      # Preload nested paths
+      pstate = PState.preload(pstate, "base_deck:uuid", [cards: [:translations]])
+
+      # Preload multiple fields
+      pstate = PState.preload(pstate, "entity:uuid", [:field1, :field2])
+
+  ## Returns
+
+  Returns the updated PState with warmed cache containing all preloaded entities.
+  """
+  @spec preload(t(), String.t(), keyword() | [atom()]) :: t()
+  def preload(pstate, key, paths) when is_binary(key) do
+    # Fetch the root entity and ensure it's in cache
+    case Internal.fetch_with_cache(pstate, key) do
+      {:ok, entity} when is_map(entity) ->
+        # Add root entity to cache
+        pstate_with_root = put_in(pstate.cache[key], entity)
+
+        # Collect all keys to preload
+        keys_to_preload = collect_preload_keys(entity, paths)
+
+        # Fetch all keys in batch
+        pstate_with_cache = batch_fetch_and_warm_cache(pstate_with_root, keys_to_preload)
+
+        # Handle nested preloading recursively
+        handle_nested_preload(pstate_with_cache, entity, paths)
+
+      {:ok, _non_map} ->
+        # Can't preload on non-map values
+        pstate
+
+      :error ->
+        # Entity doesn't exist, return unchanged
+        pstate
+    end
+  end
+
+  # Collect all ref keys from specified paths
+  defp collect_preload_keys(entity, paths) when is_list(paths) do
+    paths
+    |> Enum.flat_map(fn
+      # Simple atom path: :cards
+      path when is_atom(path) ->
+        extract_ref_keys(Map.get(entity, path))
+
+      # Keyword path: cards: [:translations]
+      {path, _nested_paths} when is_atom(path) ->
+        extract_ref_keys(Map.get(entity, path))
+    end)
+    |> Enum.uniq()
+  end
+
+  # Extract ref keys from a value
+  defp extract_ref_keys(%Ref{key: key}), do: [key]
+
+  defp extract_ref_keys(value) when is_map(value) do
+    value
+    |> Map.values()
+    |> Enum.flat_map(&extract_ref_keys/1)
+  end
+
+  defp extract_ref_keys(value) when is_list(value) do
+    Enum.flat_map(value, &extract_ref_keys/1)
+  end
+
+  defp extract_ref_keys(_other), do: []
+
+  # Batch fetch keys and warm cache
+  defp batch_fetch_and_warm_cache(pstate, []), do: pstate
+
+  defp batch_fetch_and_warm_cache(pstate, keys) do
+    # Use multi_get if adapter supports it
+    if function_exported?(pstate.adapter, :multi_get, 2) do
+      case pstate.adapter.multi_get(pstate.adapter_state, keys) do
+        {:ok, results} ->
+          # Warm cache with all results
+          Enum.reduce(results, pstate, fn {key, encoded_value}, acc_pstate ->
+            decoded_value = Internal.decode_value(encoded_value)
+            put_in(acc_pstate.cache[key], decoded_value)
+          end)
+
+        {:error, _reason} ->
+          # On error, fall back to individual fetches
+          fallback_individual_fetch(pstate, keys)
+      end
+    else
+      # Adapter doesn't support multi_get, use individual fetches
+      fallback_individual_fetch(pstate, keys)
+    end
+  end
+
+  # Fallback to individual fetches if multi_get not available
+  defp fallback_individual_fetch(pstate, keys) do
+    Enum.reduce(keys, pstate, fn key, acc_pstate ->
+      case Internal.fetch_with_cache(acc_pstate, key) do
+        {:ok, value} ->
+          put_in(acc_pstate.cache[key], value)
+
+        :error ->
+          acc_pstate
+      end
+    end)
+  end
+
+  # Handle nested preloading recursively
+  defp handle_nested_preload(pstate, entity, paths) when is_list(paths) do
+    # Check if any paths have nested preloading
+    nested_paths =
+      Enum.filter(paths, fn
+        {_path, nested} when is_list(nested) -> true
+        _ -> false
+      end)
+
+    if Enum.empty?(nested_paths) do
+      # No nested preloading needed
+      pstate
+    else
+      # Process nested preloading
+      Enum.reduce(nested_paths, pstate, fn {path, nested_specs}, acc_pstate ->
+        # Get the field value from the entity (not cache - path is an atom)
+        field_value = Map.get(entity, path)
+
+        if field_value do
+          # Get all keys from this field
+          keys = extract_ref_keys(field_value)
+
+          # Recursively preload nested paths for each key
+          Enum.reduce(keys, acc_pstate, fn key, inner_pstate ->
+            preload(inner_pstate, key, nested_specs)
+          end)
+        else
+          acc_pstate
+        end
+      end)
+    end
+  end
+
   # Bidirectional references helper
 
   @doc """
