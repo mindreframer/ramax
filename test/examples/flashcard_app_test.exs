@@ -75,10 +75,11 @@ defmodule FlashcardAppTest do
     {:ok, app} = FlashcardApp.create_deck(app, "spanish-101", "Spanish Basics")
     {:ok, app} = FlashcardApp.create_card(app, "card-1", "spanish-101", "Hello", "Hola")
 
-    {:ok, deck} = FlashcardApp.get_deck(app, "spanish-101")
+    # Get deck with resolved refs to access full card data
+    {:ok, deck} = PState.get_resolved(app.store.pstate, "deck:spanish-101", depth: :infinity)
 
     assert Map.has_key?(deck.cards, "card-1")
-    # PState auto-resolves references, so we get the full card
+    # With get_resolved, refs are resolved and we get the full card
     assert deck.cards["card-1"].id == "card-1"
   end
 

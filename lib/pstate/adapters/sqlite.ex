@@ -9,7 +9,7 @@ defmodule PState.Adapters.SQLite do
 
   - Durable storage (single file)
   - WAL mode for better concurrency
-  - JSON encoding/decoding
+  - Erlang term binary encoding/decoding
   - Prepared statements for performance
   - Updated timestamp tracking
 
@@ -78,8 +78,9 @@ defmodule PState.Adapters.SQLite do
 
         result =
           case Exqlite.Sqlite3.step(conn, stmt) do
-            {:row, [json_value]} ->
-              value = Jason.decode!(json_value)
+            {:row, [binary_value]} ->
+              # Decode Erlang term from binary
+              value = :erlang.binary_to_term(binary_value)
               {:ok, value}
 
             :done ->
@@ -98,7 +99,8 @@ defmodule PState.Adapters.SQLite do
 
   @impl true
   def put(%__MODULE__{conn: conn, table_name: table}, key, value) do
-    json_value = Jason.encode!(value)
+    # Encode Erlang term to binary
+    binary_value = :erlang.term_to_binary(value)
 
     sql = """
     INSERT INTO #{table} (key, value)
@@ -108,7 +110,7 @@ defmodule PState.Adapters.SQLite do
 
     case Exqlite.Sqlite3.prepare(conn, sql) do
       {:ok, stmt} ->
-        :ok = Exqlite.Sqlite3.bind(stmt, [key, json_value])
+        :ok = Exqlite.Sqlite3.bind(stmt, [key, binary_value])
         :done = Exqlite.Sqlite3.step(conn, stmt)
         :ok = Exqlite.Sqlite3.release(conn, stmt)
         :ok
@@ -198,8 +200,9 @@ defmodule PState.Adapters.SQLite do
         {:ok, stmt} = Exqlite.Sqlite3.prepare(conn, sql)
 
         Enum.each(entries, fn {key, value} ->
-          json_value = Jason.encode!(value)
-          :ok = Exqlite.Sqlite3.bind(stmt, [key, json_value])
+          # Encode Erlang term to binary (consistent with put/3)
+          binary_value = :erlang.term_to_binary(value)
+          :ok = Exqlite.Sqlite3.bind(stmt, [key, binary_value])
           :done = Exqlite.Sqlite3.step(conn, stmt)
           :ok = Exqlite.Sqlite3.reset(stmt)
         end)
@@ -221,8 +224,9 @@ defmodule PState.Adapters.SQLite do
 
   defp collect_kv_rows(conn, stmt, acc) do
     case Exqlite.Sqlite3.step(conn, stmt) do
-      {:row, [key, json_value]} ->
-        value = Jason.decode!(json_value)
+      {:row, [key, binary_value]} ->
+        # Decode Erlang term from binary
+        value = :erlang.binary_to_term(binary_value)
         collect_kv_rows(conn, stmt, [{key, value} | acc])
 
       :done ->
@@ -232,8 +236,9 @@ defmodule PState.Adapters.SQLite do
 
   defp collect_kv_map(conn, stmt, acc) do
     case Exqlite.Sqlite3.step(conn, stmt) do
-      {:row, [key, json_value]} ->
-        value = Jason.decode!(json_value)
+      {:row, [key, binary_value]} ->
+        # Decode Erlang term from binary
+        value = :erlang.binary_to_term(binary_value)
         collect_kv_map(conn, stmt, Map.put(acc, key, value))
 
       :done ->

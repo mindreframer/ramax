@@ -116,16 +116,18 @@ defmodule PState do
       iex> pstate["entity:123"]
       %{id: "123", name: "test"}
 
-      # Auto-resolves refs
+      # Returns refs as-is (depth: 0)
       iex> pstate["parent:456"]
-      %{id: "456", child: %{id: "789"}}  # child ref auto-resolved
+      %{id: "456", child: %PState.Ref{key: "child:789"}}  # child is a Ref
 
   """
   @impl Access
   @spec fetch(t(), String.t()) :: {:ok, term()} | :error
   def fetch(pstate, key) when is_binary(key) do
-    # Default to depth 0 (no ref resolution) for safety and performance
-    # Use fetch_shallow/3 or get_resolved/3 for ref resolution
+    # Default to depth 0 (no ref resolution) for performance
+    # Writing data with put_in uses fetch internally, and we don't want
+    # to resolve refs during writes as that's very slow.
+    # For reading with ref resolution, use PState.get_resolved/3 explicitly.
     fetch_with_visited(pstate, key, MapSet.new(), 0)
   end
 

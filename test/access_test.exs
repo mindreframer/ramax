@@ -32,7 +32,7 @@ defmodule AccessTest do
       pstate = put_in(pstate["source:123"], Ref.new("target:456"))
 
       # Fetch source - should auto-resolve to target
-      assert {:ok, %{id: "456", data: "resolved"}} = PState.fetch(pstate, "source:123")
+      assert {:ok, %{id: "456", data: "resolved"}} = PState.get_resolved(pstate, "source:123", depth: :infinity)
     end
 
     test "RMX001_3C_T3: resolves nested refs (A→B→C)", %{pstate: pstate} do
@@ -42,7 +42,7 @@ defmodule AccessTest do
       pstate = put_in(pstate["entity:A"], Ref.new("entity:B"))
 
       # Fetch A - should resolve through B to C
-      assert {:ok, %{id: "C", value: "final"}} = PState.fetch(pstate, "entity:A")
+      assert {:ok, %{id: "C", value: "final"}} = PState.get_resolved(pstate, "entity:A", depth: :infinity)
     end
 
     test "RMX001_3C_T4: returns :error for missing key", %{pstate: pstate} do
@@ -56,7 +56,7 @@ defmodule AccessTest do
 
       # Should raise PState.Error
       assert_raise PState.Error, fn ->
-        PState.fetch(pstate, "entity:A")
+        PState.get_resolved(pstate, "entity:A", depth: :infinity)
       end
     end
 
@@ -84,7 +84,7 @@ defmodule AccessTest do
         })
 
       # Fetch parent - refs should be resolved
-      assert {:ok, result} = PState.fetch(pstate, "parent:100")
+      assert {:ok, result} = PState.get_resolved(pstate, "parent:100", depth: :infinity)
       assert result.id == "100"
       assert result.children["c1"] == %{id: "1", name: "Child 1"}
       assert result.children["c2"] == %{id: "2", name: "Child 2"}
@@ -153,7 +153,7 @@ defmodule AccessTest do
       pstate = put_in(pstate["source:1"], Ref.new("target:1"))
 
       # Fetch to populate ref_cache
-      assert {:ok, %{value: 1}} = PState.fetch(pstate, "source:1")
+      assert {:ok, %{value: 1}} = PState.get_resolved(pstate, "source:1", depth: :infinity)
       assert pstate.ref_cache == %{}
 
       # Update target
@@ -166,7 +166,7 @@ defmodule AccessTest do
       assert pstate.ref_cache == %{}
 
       # Fetching source should get updated target value
-      assert {:ok, %{value: 2}} = PState.fetch(pstate, "source:1")
+      assert {:ok, %{value: 2}} = PState.get_resolved(pstate, "source:1", depth: :infinity)
     end
   end
 
@@ -220,7 +220,7 @@ defmodule AccessTest do
       pstate = put_in(pstate["target:123"], %{data: "resolved"})
 
       # Fetch should resolve
-      assert {:ok, %{data: "resolved"}} = PState.fetch(pstate, "source:1")
+      assert {:ok, %{data: "resolved"}} = PState.get_resolved(pstate, "source:1", depth: :infinity)
     end
   end
 
@@ -230,7 +230,7 @@ defmodule AccessTest do
       pstate = put_in(pstate["entity:A"], Ref.new("entity:A"))
 
       assert_raise PState.Error, fn ->
-        PState.fetch(pstate, "entity:A")
+        PState.get_resolved(pstate, "entity:A", depth: :infinity)
       end
     end
 
@@ -250,7 +250,7 @@ defmodule AccessTest do
         })
 
       # Should not raise - instead leaves the backwards ref unresolved
-      {:ok, a} = PState.fetch(pstate, "entity:A")
+      {:ok, a} = PState.get_resolved(pstate, "entity:A", depth: :infinity)
       assert a.id == "A"
       # A's next should resolve to B
       assert is_map(a.next)
@@ -265,7 +265,7 @@ defmodule AccessTest do
       pstate = put_in(pstate["entity:C"], Ref.new("entity:A"))
 
       assert_raise PState.Error, fn ->
-        PState.fetch(pstate, "entity:A")
+        PState.get_resolved(pstate, "entity:A", depth: :infinity)
       end
     end
   end

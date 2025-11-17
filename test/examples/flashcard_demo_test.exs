@@ -5,20 +5,30 @@ defmodule FlashcardDemoTest do
 
   alias FlashcardDemo
 
-  # Clean up ETS tables between tests to avoid conflicts
+  # Clean up SQLite database files between tests to avoid conflicts
   setup do
-    # Delete ETS tables if they exist
-    try do
-      :ets.delete(:event_store)
-    rescue
-      ArgumentError -> :ok
-    end
+    # Delete SQLite database files if they exist
+    event_db_path = "/tmp/flashcard_demo_events.db"
+    pstate_db_path = "/tmp/flashcard_demo_pstate.db"
 
-    try do
-      :ets.delete(:pstate)
-    rescue
-      ArgumentError -> :ok
-    end
+    # Force delete files, ignore errors if they don't exist
+    File.rm_rf(event_db_path)
+    File.rm_rf(pstate_db_path)
+    # Also remove any WAL/SHM files
+    File.rm_rf("#{event_db_path}-wal")
+    File.rm_rf("#{event_db_path}-shm")
+    File.rm_rf("#{pstate_db_path}-wal")
+    File.rm_rf("#{pstate_db_path}-shm")
+
+    # Clean up after test
+    on_exit(fn ->
+      File.rm_rf(event_db_path)
+      File.rm_rf(pstate_db_path)
+      File.rm_rf("#{event_db_path}-wal")
+      File.rm_rf("#{event_db_path}-shm")
+      File.rm_rf("#{pstate_db_path}-wal")
+      File.rm_rf("#{pstate_db_path}-shm")
+    end)
 
     :ok
   end
@@ -48,13 +58,10 @@ defmodule FlashcardDemoTest do
       assert output =~ "Creating 'Spanish Basics' deck"
       assert output =~ "✓ Deck created: spanish-101"
 
-      # Verify card creation
-      assert output =~ "Adding basic vocabulary cards"
-      assert output =~ "Created card: Hello → Hola"
-      assert output =~ "Created card: Goodbye → Adiós"
-      assert output =~ "Created card: Thank you → Gracias"
-      assert output =~ "Created card: Please → Por favor"
-      assert output =~ "Created card: Yes → Sí"
+      # Verify card creation (demo now creates 1500 cards)
+      assert output =~ "📝 Adding 1500 vocabulary cards"
+      assert output =~ "✓ Created 100 cards"
+      assert output =~ "✓ Created 1500 cards"
     end
 
     test "RMX006_4B_T3: demo adds translations" do
@@ -63,18 +70,16 @@ defmodule FlashcardDemoTest do
           FlashcardDemo.run()
         end)
 
-      # Verify English translations
-      assert output =~ "Adding English translations"
-      assert output =~ "Added translation: card-1 (back) → Hello"
+      # Verify English translations (now adds 100)
+      assert output =~ "🌍 Adding English translations to first 100 cards"
+      assert output =~ "✓ Added 100 translations"
 
-      # Verify French translations
-      assert output =~ "Adding French translations"
-      assert output =~ "Added translation: card-1 (front) → Bonjour"
-      assert output =~ "Added translation: card-2 (front) → Au revoir"
-      assert output =~ "Added translation: card-3 (front) → Merci"
+      # Verify French translations (now adds 50)
+      assert output =~ "🇫🇷 Adding French translations to first 50 cards"
+      assert output =~ "✓ Added 50 translations"
 
       # Verify card update
-      assert output =~ "Updating card-1 (significant change)"
+      assert output =~ "✏️  Updating card-1 (significant change)"
       assert output =~ "✓ Card updated: Hello! → ¡Hola!"
     end
 
@@ -88,12 +93,12 @@ defmodule FlashcardDemoTest do
       assert output =~ "Rebuilding PState from event store"
       assert output =~ "✓ Rebuild successful - data integrity verified!"
 
-      # Verify statistics
-      assert output =~ "Total events in event store:"
-      assert output =~ "Demo Statistics:"
+      # Verify statistics (updated for new demo scale)
+      assert output =~ "📈 Total events in event store:"
+      assert output =~ "📊 Demo Statistics:"
       assert output =~ "Decks created: 1"
-      assert output =~ "Cards created: 5"
-      assert output =~ "Translations added: 10"
+      assert output =~ "Cards created: 1500"
+      assert output =~ "Translations added: 150"
       assert output =~ "Card updates: 1"
     end
 
@@ -103,12 +108,11 @@ defmodule FlashcardDemoTest do
           FlashcardDemo.run()
         end)
 
-      # Verify card display section
-      assert output =~ "Cards with translations:"
+      # Verify card display section (updated for new output format)
+      assert output =~ "📋 Listing all cards"
       assert output =~ "Card: card-"
       assert output =~ "Front:"
       assert output =~ "Back:"
-      assert output =~ "Translations:"
     end
 
     test "demo shows event count" do

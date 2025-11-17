@@ -1,13 +1,14 @@
 defmodule PState.Adapters.SQLiteTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false  # Run tests serially to avoid SQLite database locking
   alias PState.Adapters.SQLite
 
   setup do
-    # Create unique DB file for each test
-    db_path = "/tmp/pstate_test_#{:rand.uniform(1_000_000)}.db"
+    # Create unique DB file for each test using timestamp + random + pid
+    unique_id = "#{System.system_time(:nanosecond)}_#{:rand.uniform(999999)}_#{:erlang.phash2(self())}"
+    db_path = "/tmp/pstate_test_#{unique_id}.db"
 
     on_exit(fn ->
-      # Clean up database file
+      # Clean up database files (ignore errors if files don't exist)
       File.rm(db_path)
       File.rm("#{db_path}-shm")
       File.rm("#{db_path}-wal")
@@ -77,7 +78,7 @@ defmodule PState.Adapters.SQLiteTest do
       assert :ok = SQLite.put(state, "base_card:uuid1", data)
 
       assert {:ok, retrieved} = SQLite.get(state, "base_card:uuid1")
-      assert retrieved == %{"front" => "Hello", "back" => "Hola"}
+      assert retrieved == %{front: "Hello", back: "Hola"}
     end
 
     # RMX004_3A_T6: Test put overwrites existing
@@ -86,11 +87,11 @@ defmodule PState.Adapters.SQLiteTest do
 
       # Insert initial value
       :ok = SQLite.put(state, "key1", %{value: "first"})
-      assert {:ok, %{"value" => "first"}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: "first"}} = SQLite.get(state, "key1")
 
       # Overwrite
       :ok = SQLite.put(state, "key1", %{value: "second"})
-      assert {:ok, %{"value" => "second"}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: "second"}} = SQLite.get(state, "key1")
     end
 
     # RMX004_3A_T7: Test get missing key
@@ -107,7 +108,7 @@ defmodule PState.Adapters.SQLiteTest do
 
       # Insert and verify
       :ok = SQLite.put(state, "to_delete", %{data: "value"})
-      assert {:ok, %{"data" => "value"}} = SQLite.get(state, "to_delete")
+      assert {:ok, %{data: "value"}} = SQLite.get(state, "to_delete")
 
       # Delete
       assert :ok = SQLite.delete(state, "to_delete")
@@ -134,10 +135,10 @@ defmodule PState.Adapters.SQLiteTest do
       assert "base_card:uuid1" in card_keys
       assert "base_card:uuid2" in card_keys
 
-      # Verify values are decoded
+      # Verify values are decoded (Erlang terms preserve atom keys)
       {_key, value} = List.first(card_results)
       assert is_map(value)
-      assert Map.has_key?(value, "front")
+      assert Map.has_key?(value, :front)
     end
 
     # RMX004_3A_T10: Test JSON encoding/decoding
@@ -164,13 +165,13 @@ defmodule PState.Adapters.SQLiteTest do
       :ok = SQLite.put(state, "base_card:complex", complex_data)
       assert {:ok, retrieved} = SQLite.get(state, "base_card:complex")
 
-      # Verify structure is preserved (keys become strings due to JSON)
-      assert retrieved["id"] == "550e8400"
-      assert retrieved["front"] == "Hello"
-      assert retrieved["metadata"]["pronunciation"] == "həˈloʊ"
-      assert retrieved["metadata"]["tags"] == ["greeting", "common"]
-      assert retrieved["metadata"]["level"] == 1
-      assert retrieved["translations"]["es"] == "Hola"
+      # Verify structure is preserved exactly (Erlang term serialization)
+      assert retrieved[:id] == "550e8400"
+      assert retrieved[:front] == "Hello"
+      assert retrieved[:metadata][:pronunciation] == "həˈloʊ"
+      assert retrieved[:metadata][:tags] == ["greeting", "common"]
+      assert retrieved[:metadata][:level] == 1
+      assert retrieved[:translations]["es"] == "Hola"
     end
 
     # RMX004_3A_T11: Test persistence (close/reopen DB)
@@ -178,7 +179,7 @@ defmodule PState.Adapters.SQLiteTest do
       # First connection - insert data
       {:ok, state1} = SQLite.init(path: db_path)
       :ok = SQLite.put(state1, "persistent_key", %{value: "persistent_data"})
-      assert {:ok, %{"value" => "persistent_data"}} = SQLite.get(state1, "persistent_key")
+      assert {:ok, %{value: "persistent_data"}} = SQLite.get(state1, "persistent_key")
 
       # Close connection
       :ok = Exqlite.Sqlite3.close(state1.conn)
@@ -187,7 +188,7 @@ defmodule PState.Adapters.SQLiteTest do
       {:ok, state2} = SQLite.init(path: db_path)
 
       # Verify data is still there
-      assert {:ok, %{"value" => "persistent_data"}} = SQLite.get(state2, "persistent_key")
+      assert {:ok, %{value: "persistent_data"}} = SQLite.get(state2, "persistent_key")
     end
   end
 
@@ -231,7 +232,7 @@ defmodule PState.Adapters.SQLiteTest do
       special_key = "special:key-with-dash_and_underscore"
       :ok = SQLite.put(state, special_key, %{data: "special"})
 
-      assert {:ok, %{"data" => "special"}} = SQLite.get(state, special_key)
+      assert {:ok, %{data: "special"}} = SQLite.get(state, special_key)
     end
 
     test "multiple operations on same database", %{db_path: db_path} do
@@ -243,9 +244,9 @@ defmodule PState.Adapters.SQLiteTest do
       :ok = SQLite.put(state, "key3", %{value: "value3"})
 
       # Multiple gets
-      assert {:ok, %{"value" => "value1"}} = SQLite.get(state, "key1")
-      assert {:ok, %{"value" => "value2"}} = SQLite.get(state, "key2")
-      assert {:ok, %{"value" => "value3"}} = SQLite.get(state, "key3")
+      assert {:ok, %{value: "value1"}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: "value2"}} = SQLite.get(state, "key2")
+      assert {:ok, %{value: "value3"}} = SQLite.get(state, "key3")
 
       # Delete some
       :ok = SQLite.delete(state, "key1")
@@ -254,7 +255,7 @@ defmodule PState.Adapters.SQLiteTest do
       # Verify
       assert {:ok, nil} = SQLite.get(state, "key1")
       assert {:ok, nil} = SQLite.get(state, "key2")
-      assert {:ok, %{"value" => "value3"}} = SQLite.get(state, "key3")
+      assert {:ok, %{value: "value3"}} = SQLite.get(state, "key3")
     end
   end
 
@@ -277,9 +278,9 @@ defmodule PState.Adapters.SQLiteTest do
       # Fetch multiple
       assert {:ok, results} = SQLite.multi_get(state, ["key1", "key2", "key3"])
       assert map_size(results) == 3
-      assert results["key1"] == %{"value" => 1}
-      assert results["key2"] == %{"value" => 2}
-      assert results["key3"] == %{"value" => 3}
+      assert results["key1"] == %{value: 1}
+      assert results["key2"] == %{value: 2}
+      assert results["key3"] == %{value: 3}
     end
 
     test "multi_get/2 handles missing keys", %{db_path: db_path} do
@@ -290,7 +291,7 @@ defmodule PState.Adapters.SQLiteTest do
       # Request mix of existing and missing keys
       assert {:ok, results} = SQLite.multi_get(state, ["key1", "missing1", "missing2"])
       assert map_size(results) == 1
-      assert results["key1"] == %{"value" => 1}
+      assert results["key1"] == %{value: 1}
       refute Map.has_key?(results, "missing1")
     end
 
@@ -313,9 +314,9 @@ defmodule PState.Adapters.SQLiteTest do
       assert :ok = SQLite.multi_put(state, entries)
 
       # Verify all entries were inserted
-      assert {:ok, %{"value" => 1}} = SQLite.get(state, "key1")
-      assert {:ok, %{"value" => 2}} = SQLite.get(state, "key2")
-      assert {:ok, %{"value" => 3}} = SQLite.get(state, "key3")
+      assert {:ok, %{value: 1}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: 2}} = SQLite.get(state, "key2")
+      assert {:ok, %{value: 3}} = SQLite.get(state, "key3")
     end
 
     test "multi_put/2 overwrites existing values", %{db_path: db_path} do
@@ -333,8 +334,8 @@ defmodule PState.Adapters.SQLiteTest do
       assert :ok = SQLite.multi_put(state, entries)
 
       # Verify values
-      assert {:ok, %{"value" => "new"}} = SQLite.get(state, "key1")
-      assert {:ok, %{"value" => "fresh"}} = SQLite.get(state, "key2")
+      assert {:ok, %{value: "new"}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: "fresh"}} = SQLite.get(state, "key2")
     end
   end
 
@@ -366,9 +367,9 @@ defmodule PState.Adapters.SQLiteTest do
       assert map_size(results) == 10
 
       # Spot check
-      assert results["base_card:uuid1"]["front"] == "Question 1"
-      assert results["base_card:uuid5"]["back"] == "Answer 5"
-      assert results["base_card:uuid10"]["index"] == 10
+      assert results["base_card:uuid1"][:front] == "Question 1"
+      assert results["base_card:uuid5"][:back] == "Answer 5"
+      assert results["base_card:uuid10"][:index] == 10
     end
 
     # RMX004_4A_T3: Test SQLite multi_get with 100 keys
@@ -395,9 +396,9 @@ defmodule PState.Adapters.SQLiteTest do
       assert time_us < 20_000, "multi_get took #{time_us}μs, expected <20,000μs"
 
       # Spot check various entries
-      assert results["base_card:uuid1"]["index"] == 1
-      assert results["base_card:uuid50"]["index"] == 50
-      assert results["base_card:uuid100"]["index"] == 100
+      assert results["base_card:uuid1"][:index] == 1
+      assert results["base_card:uuid50"][:index] == 50
+      assert results["base_card:uuid100"][:index] == 100
     end
 
     # RMX004_4A_T4: Test SQLite multi_get with missing keys
@@ -419,9 +420,9 @@ defmodule PState.Adapters.SQLiteTest do
 
       # Only existing keys should be in results
       assert map_size(results) == 3
-      assert results["key1"]["value"] == 1
-      assert results["key3"]["value"] == 3
-      assert results["key5"]["value"] == 5
+      assert results["key1"][:value] == 1
+      assert results["key3"][:value] == 3
+      assert results["key5"][:value] == 5
 
       # Missing keys should not be present
       refute Map.has_key?(results, "key2")
@@ -453,8 +454,8 @@ defmodule PState.Adapters.SQLiteTest do
       # Verify all 10 entries exist
       for i <- 1..10 do
         assert {:ok, data} = SQLite.get(state, "base_card:uuid#{i}")
-        assert data["front"] == "Question #{i}"
-        assert data["back"] == "Answer #{i}"
+        assert data[:front] == "Question #{i}"
+        assert data[:back] == "Answer #{i}"
       end
     end
 
@@ -485,8 +486,8 @@ defmodule PState.Adapters.SQLiteTest do
       # Verify all entries exist
       for i <- [1, 25, 50, 75, 100] do
         assert {:ok, data} = SQLite.get(state, "base_card:uuid#{i}")
-        assert data["front"] == "Question #{i}"
-        assert data["metadata"]["level"] == rem(i, 5)
+        assert data[:front] == "Question #{i}"
+        assert data[:metadata][:level] == rem(i, 5)
       end
 
       # Verify total count via scan
@@ -507,8 +508,8 @@ defmodule PState.Adapters.SQLiteTest do
       assert :ok = SQLite.multi_put(state, entries)
 
       # Verify they exist
-      assert {:ok, %{"value" => 1}} = SQLite.get(state, "key1")
-      assert {:ok, %{"value" => 2}} = SQLite.get(state, "key2")
+      assert {:ok, %{value: 1}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: 2}} = SQLite.get(state, "key2")
 
       # Now test that overwriting works in a transaction
       new_entries = [
@@ -520,9 +521,9 @@ defmodule PState.Adapters.SQLiteTest do
       assert :ok = SQLite.multi_put(state, new_entries)
 
       # All should be updated/inserted atomically
-      assert {:ok, %{"value" => 100}} = SQLite.get(state, "key1")
-      assert {:ok, %{"value" => 200}} = SQLite.get(state, "key2")
-      assert {:ok, %{"value" => 300}} = SQLite.get(state, "key3")
+      assert {:ok, %{value: 100}} = SQLite.get(state, "key1")
+      assert {:ok, %{value: 200}} = SQLite.get(state, "key2")
+      assert {:ok, %{value: 300}} = SQLite.get(state, "key3")
     end
 
     # RMX004_4A_T9: Test SQLite multi_put performance (<50ms for 100 entries)
@@ -562,11 +563,11 @@ defmodule PState.Adapters.SQLiteTest do
       # Assert performance target
       assert time_ms < 50, "multi_put took #{time_ms}ms, expected <50ms"
 
-      # Also verify data integrity
+      # Also verify data integrity (Erlang terms preserve atom keys)
       {first_key, _} = List.first(entries)
       assert {:ok, data} = SQLite.get(state, first_key)
-      assert Map.has_key?(data, "front")
-      assert Map.has_key?(data, "metadata")
+      assert Map.has_key?(data, :front)
+      assert Map.has_key?(data, :metadata)
     end
   end
 

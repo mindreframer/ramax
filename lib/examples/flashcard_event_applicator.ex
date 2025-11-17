@@ -1,6 +1,6 @@
-defmodule ContentStore.EventApplicator do
+defmodule FlashcardEventApplicator do
   @moduledoc """
-  Pure functions that apply events to PState.
+  Flashcard-specific event applicator - applies flashcard domain events to PState.
 
   EventApplicator is the heart of the event sourcing system. It transforms
   immutable events from the EventStore into PState updates, enabling:

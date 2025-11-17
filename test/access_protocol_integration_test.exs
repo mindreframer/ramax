@@ -247,7 +247,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = pstate["base_card:123"]
+      {:ok, result} = PState.get_resolved(pstate, "base_card:123", depth: :infinity)
 
       # Card data should be migrated
       assert result.metadata == %{notes: "old format"}
@@ -273,7 +273,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = pstate["base_card:123"]
+      {:ok, result} = PState.get_resolved(pstate, "base_card:123", depth: :infinity)
 
       # Deck should be migrated from string to ref, then resolved
       assert result.deck.id == "deck1"
@@ -297,7 +297,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = pstate["host_card:456"]
+      {:ok, result} = PState.get_resolved(pstate, "host_card:456", depth: :infinity)
 
       # host_card should resolve base_card ref
       assert result.base_card.id == "123"
@@ -344,8 +344,9 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      # Access through nested refs
-      result = get_in(pstate, ["host_card:456", :base_card, :metadata])
+      # Access through nested refs - need to resolve first
+      {:ok, resolved} = PState.get_resolved(pstate, "host_card:456", depth: :infinity)
+      result = resolved.base_card.metadata
 
       assert result == %{notes: "nested old format"}
     end
@@ -537,7 +538,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = pstate["base_card:123"]
+      {:ok, result} = PState.get_resolved(pstate, "base_card:123", depth: :infinity)
 
       # Ref should still resolve even without schema
       assert result.deck.id == "deck1"

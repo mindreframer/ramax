@@ -1,7 +1,7 @@
-defmodule ContentStore.CommandTest do
+defmodule FlashcardCommandTest do
   use ExUnit.Case, async: true
 
-  alias ContentStore.Command
+  alias FlashcardCommand, as: Command
   alias PState
   alias PState.Ref
 

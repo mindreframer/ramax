@@ -392,11 +392,18 @@ defmodule Helpers.Value do
   defp get_value_from_field(_scope, _field), do: nil
 
   defp try_access_fetch(scope, field) do
-    # Check if scope implements Access behavior (like PState struct)
-    if function_exported?(scope.__struct__, :fetch, 2) do
-      Access.fetch(scope, field)
+    # Check if scope is a PState struct that needs ref resolution
+    if is_struct(scope, PState) do
+      # Use get_resolved with infinite depth for backwards compatibility
+      # Value.get is a convenience function that users expect to resolve refs
+      PState.get_resolved(scope, field, depth: :infinity)
     else
-      :error
+      # For other Access-implementing structs, use regular Access
+      if function_exported?(scope.__struct__, :fetch, 2) do
+        Access.fetch(scope, field)
+      else
+        :error
+      end
     end
   rescue
     # If __struct__ doesn't exist (regular map), return :error

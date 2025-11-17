@@ -2,11 +2,11 @@ defmodule ContentStoreTest do
   use ExUnit.Case, async: true
 
   alias ContentStore
-  alias ContentStore.Command
+  alias FlashcardCommand, as: Command
 
   describe "new/1" do
     test "RMX006_3A_T1: initializes both stores" do
-      store = ContentStore.new()
+      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
 
       assert %ContentStore{} = store
       assert %EventStore{} = store.event_store
@@ -31,7 +31,7 @@ defmodule ContentStoreTest do
 
   describe "execute/3" do
     setup do
-      store = ContentStore.new()
+      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
       %{store: store}
     end
 
@@ -109,7 +109,7 @@ defmodule ContentStoreTest do
 
   describe "rebuild_pstate/2" do
     setup do
-      store = ContentStore.new()
+      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
 
       # Create a deck and some cards
       {:ok, _, store} =
@@ -167,7 +167,8 @@ defmodule ContentStoreTest do
       store =
         ContentStore.new(
           event_opts: [table_name: :events_1000_test],
-          pstate_opts: [table_name: :pstate_1000_test]
+          pstate_opts: [table_name: :pstate_1000_test],
+          event_applicator: FlashcardEventApplicator
         )
 
       # Create a deck
@@ -232,7 +233,7 @@ defmodule ContentStoreTest do
 
   describe "catchup_pstate/2" do
     setup do
-      store = ContentStore.new()
+      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
 
       # Create initial data
       {:ok, _, store} =
@@ -320,7 +321,7 @@ defmodule ContentStoreTest do
 
   describe "complete workflow" do
     test "RMX006_3A_T16: execute → query" do
-      store = ContentStore.new()
+      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
 
       # Execute: Create deck
       {:ok, _, store} =
@@ -362,7 +363,7 @@ defmodule ContentStoreTest do
     end
 
     test "RMX006_3A_T17: execute → rebuild → query" do
-      store = ContentStore.new()
+      store = ContentStore.new(event_applicator: FlashcardEventApplicator)
 
       # Create data
       {:ok, _, store} =

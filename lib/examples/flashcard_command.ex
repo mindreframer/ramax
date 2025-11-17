@@ -1,6 +1,6 @@
-defmodule ContentStore.Command do
+defmodule FlashcardCommand do
   @moduledoc """
-  Commands validate current state and generate events.
+  Flashcard-specific commands that validate current state and generate events.
 
   Commands are pure functions that take the current PState and parameters,
   validate the operation is allowed, and return event specifications that

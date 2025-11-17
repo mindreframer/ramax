@@ -158,8 +158,8 @@ defmodule PStateTest do
           parent_collection: :cards
         )
 
-      # Verify child has parent ref (which auto-resolves when fetched)
-      {:ok, card} = PState.fetch(pstate, "base_card:#{card_id}")
+      # Verify child has parent ref (which resolves when using get_resolved)
+      {:ok, card} = PState.get_resolved(pstate, "base_card:#{card_id}", depth: :infinity)
       # The base_deck ref should resolve to the actual deck
       assert is_map(card.base_deck)
       assert card.base_deck.id == parent_id
@@ -180,8 +180,8 @@ defmodule PStateTest do
           parent_collection: :cards
         )
 
-      # Verify parent collection has child ref (which auto-resolves when fetched)
-      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      # Verify parent collection has child ref (which resolves when using get_resolved)
+      {:ok, deck} = PState.get_resolved(pstate, "base_deck:#{parent_id}", depth: :infinity)
       assert is_map(deck.cards)
       # The child ref should resolve to the actual card
       card = deck.cards[card_id]
@@ -205,7 +205,7 @@ defmodule PStateTest do
         )
 
       # Verify child ref is in custom collection (as string key due to Helpers.Value)
-      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      {:ok, deck} = PState.get_resolved(pstate, "base_deck:#{parent_id}", depth: :infinity)
       # Helpers.Value.insert converts atom keys to strings
       assert is_map(deck["items"])
       card = deck["items"][card_id]
@@ -240,8 +240,8 @@ defmodule PStateTest do
           parent_collection: :cards
         )
 
-      # Verify both cards are in collection (refs auto-resolve)
-      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      # Verify both cards are in collection (refs resolve with get_resolved)
+      {:ok, deck} = PState.get_resolved(pstate, "base_deck:#{parent_id}", depth: :infinity)
       assert map_size(deck.cards) == 2
 
       # Check first card
@@ -271,13 +271,13 @@ defmodule PStateTest do
           parent_collection: :cards
         )
 
-      # Navigate from child to parent (ref auto-resolves)
-      {:ok, card} = PState.fetch(pstate, "base_card:#{card_id}")
+      # Navigate from child to parent (ref resolves with get_resolved)
+      {:ok, card} = PState.get_resolved(pstate, "base_card:#{card_id}", depth: :infinity)
       assert card.base_deck.id == parent_id
       assert card.base_deck.title == "Introduction"
 
-      # Navigate from parent to child (ref auto-resolves)
-      {:ok, deck} = PState.fetch(pstate, "base_deck:#{parent_id}")
+      # Navigate from parent to child (ref resolves with get_resolved)
+      {:ok, deck} = PState.get_resolved(pstate, "base_deck:#{parent_id}", depth: :infinity)
       resolved_card = deck.cards[card_id]
       assert resolved_card.front == "Hello"
       assert resolved_card.back == "Hola"

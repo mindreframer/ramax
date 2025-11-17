@@ -58,7 +58,7 @@ defmodule FlashcardApp do
   - RMX006: Event Application to PState Epic
   """
 
-  alias ContentStore.Command
+  alias FlashcardCommand, as: Command
 
   defstruct [:store]
 
@@ -97,6 +97,9 @@ defmodule FlashcardApp do
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
+    # Add flashcard-specific event applicator to opts
+    opts = Keyword.put_new(opts, :event_applicator, FlashcardEventApplicator)
+
     store = ContentStore.new(opts)
     %__MODULE__{store: store}
   end

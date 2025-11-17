@@ -70,8 +70,6 @@ defmodule ContentStore do
   - RMX006: Event Application to PState Epic
   """
 
-  alias ContentStore.EventApplicator
-
   defstruct [:event_store, :pstate, :config]
 
   @type t :: %__MODULE__{
@@ -118,7 +116,8 @@ defmodule ContentStore do
       pstate_adapter: Keyword.get(opts, :pstate_adapter, PState.Adapters.ETS),
       pstate_opts: Keyword.get(opts, :pstate_opts, []),
       root_key: Keyword.get(opts, :root_key, "content:root"),
-      schema: Keyword.get(opts, :schema)
+      schema: Keyword.get(opts, :schema),
+      event_applicator: Keyword.get(opts, :event_applicator)
     }
 
     # Initialize event store
@@ -196,8 +195,13 @@ defmodule ContentStore do
         # 3. Fetch events back with metadata
         events = fetch_events(updated_event_store, event_ids)
 
-        # 4. Apply events to PState
-        updated_pstate = EventApplicator.apply_events(store.pstate, events)
+        # 4. Apply events to PState (if event_applicator configured)
+        updated_pstate =
+          if store.config.event_applicator do
+            store.config.event_applicator.apply_events(store.pstate, events)
+          else
+            store.pstate
+          end
 
         updated_store = %{store | event_store: updated_event_store, pstate: updated_pstate}
 
@@ -261,7 +265,13 @@ defmodule ContentStore do
       EventStore.stream_all_events(store.event_store, batch_size: batch_size)
       |> Stream.chunk_every(batch_size)
       |> Enum.reduce(fresh_pstate, fn batch, ps ->
-        EventApplicator.apply_events(ps, batch)
+        IO.write(".")
+
+        if store.config.event_applicator do
+          store.config.event_applicator.apply_events(ps, batch)
+        else
+          ps
+        end
       end)
 
     IO.puts("✓ Rebuild complete!")
@@ -310,7 +320,13 @@ defmodule ContentStore do
       {updated_pstate, count} =
         EventStore.stream_all_events(store.event_store, from_sequence: from_sequence)
         |> Enum.reduce({store.pstate, 0}, fn event, {ps, c} ->
-          updated_ps = EventApplicator.apply_event(ps, event)
+          updated_ps =
+            if store.config.event_applicator do
+              store.config.event_applicator.apply_event(ps, event)
+            else
+              ps
+            end
+
           {updated_ps, c + 1}
         end)
 

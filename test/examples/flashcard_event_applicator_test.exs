@@ -1,7 +1,7 @@
-defmodule ContentStore.EventApplicatorTest do
+defmodule FlashcardEventApplicatorTest do
   use ExUnit.Case, async: true
 
-  alias ContentStore.EventApplicator
+  alias FlashcardEventApplicator, as: EventApplicator
   alias PState.Ref
 
   # Helper to create fresh PState for tests
