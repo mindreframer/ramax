@@ -25,7 +25,9 @@ defmodule Ramax.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.2"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:benchee, "~> 1.3", only: [:dev, :test]},
+      {:eflambe, "~> 0.3", only: [:dev, :test]}
     ]
   end
 end

@@ -124,7 +124,79 @@ defmodule PState do
   @impl Access
   @spec fetch(t(), String.t()) :: {:ok, term()} | :error
   def fetch(pstate, key) when is_binary(key) do
-    fetch_with_visited(pstate, key, MapSet.new())
+    # Default to depth 0 (no ref resolution) for safety and performance
+    # Use fetch_shallow/3 or get_resolved/3 for ref resolution
+    fetch_with_visited(pstate, key, MapSet.new(), 0)
+  end
+
+  @doc """
+  Fetch value with reference resolution (EXPLICIT API).
+
+  This is the main API for getting resolved data. Unlike the Access protocol
+  (`pstate[key]`) which returns raw data with Refs for safety, this function
+  explicitly resolves references to the specified depth.
+
+  ## Parameters
+
+  - `pstate` - PState instance
+  - `key` - Key to fetch
+  - `opts` - Options keyword list
+    - `:depth` - Maximum depth for reference resolution (default: `:infinity`)
+      - `0` - No resolution, return refs as-is (same as `pstate[key]`)
+      - `1` - Resolve only top-level refs
+      - `2` - Resolve refs 2 levels deep
+      - `:infinity` - Resolve all refs completely
+
+  ## Examples
+
+      # Get card with full resolution (explicit)
+      {:ok, card} = PState.get_resolved(pstate, "card:123")
+      # => %{id: "123", deck: %{id: "456", cards: %{...}}, ...}
+
+      # Get card with limited resolution
+      {:ok, card} = PState.get_resolved(pstate, "card:123", depth: 1)
+      # => %{id: "123", deck: %{id: "456", cards: %{...refs...}}, ...}
+
+      # Get card without any resolution (same as pstate["card:123"])
+      {:ok, card} = PState.get_resolved(pstate, "card:123", depth: 0)
+      # => %{id: "123", deck: %Ref{key: "deck:456"}, ...}
+
+  """
+  @spec get_resolved(t(), String.t(), keyword()) :: {:ok, term()} | :error
+  def get_resolved(pstate, key, opts \\ [])
+      when is_binary(key) and is_list(opts) do
+    depth = Keyword.get(opts, :depth, :infinity)
+    fetch_with_visited(pstate, key, MapSet.new(), depth)
+  end
+
+  @doc """
+  Fetch value with limited reference resolution depth.
+
+  **DEPRECATED:** Use `get_resolved/3` instead for clearer intent.
+
+  This function provides the same functionality as `get_resolved/3` but with
+  a positional depth parameter instead of options.
+
+  ## Parameters
+
+  - `pstate` - PState instance
+  - `key` - Key to fetch
+  - `max_depth` - Maximum depth for reference resolution (default: 1)
+
+  ## Examples
+
+      # Use get_resolved instead (preferred):
+      {:ok, card} = PState.get_resolved(pstate, "card:123", depth: 1)
+
+      # Old API (still works):
+      {:ok, card} = PState.fetch_shallow(pstate, "card:123", 1)
+
+  """
+  @spec fetch_shallow(t(), String.t(), non_neg_integer() | :infinity) ::
+          {:ok, term()} | :error
+  def fetch_shallow(pstate, key, max_depth \\ 1)
+      when is_binary(key) and (is_integer(max_depth) or max_depth == :infinity) do
+    fetch_with_visited(pstate, key, MapSet.new(), max_depth)
   end
 
   @doc """
@@ -188,8 +260,8 @@ defmodule PState do
 
   # Private helper functions
 
-  # Recursive fetch with cycle detection
-  defp fetch_with_visited(pstate, key, visited) do
+  # Recursive fetch with cycle detection and depth limiting
+  defp fetch_with_visited(pstate, key, visited, max_depth) do
     # Detect cycles
     if MapSet.member?(visited, key) do
       raise PState.Error, {:circular_ref, MapSet.to_list(visited)}
@@ -198,12 +270,15 @@ defmodule PState do
     # Add current key to visited set
     new_visited = MapSet.put(visited, key)
 
+    # Calculate current depth
+    current_depth = MapSet.size(visited)
+
     # Only emit telemetry for top-level fetch (not recursive refs)
     start_time = System.monotonic_time(:microsecond)
     from_cache? = Map.has_key?(pstate.cache, key)
 
     # Emit cache hit/miss telemetry
-    if MapSet.size(visited) == 0 do
+    if current_depth == 0 do
       :telemetry.execute([:pstate, :cache], %{hit?: if(from_cache?, do: 1, else: 0)}, %{
         key: key
       })
@@ -212,7 +287,7 @@ defmodule PState do
     result = Internal.fetch_and_auto_migrate(pstate, key)
 
     # Emit fetch telemetry only for top-level fetch
-    if MapSet.size(visited) == 0 do
+    if current_depth == 0 do
       duration = System.monotonic_time(:microsecond) - start_time
 
       migrated? =
@@ -230,15 +305,28 @@ defmodule PState do
       :telemetry.execute([:pstate, :fetch], %{duration: duration}, metadata)
     end
 
+    # Check if we've reached max depth
+    depth_exceeded? = max_depth != :infinity and current_depth >= max_depth
+
     case result do
       {:ok, %Ref{key: ref_key}, _migrated?} ->
-        # Auto-resolve reference recursively
-        fetch_with_visited(pstate, ref_key, new_visited)
+        if depth_exceeded? do
+          # Return the ref as-is instead of resolving
+          {:ok, %Ref{key: ref_key}}
+        else
+          # Auto-resolve reference recursively
+          fetch_with_visited(pstate, ref_key, new_visited, max_depth)
+        end
 
       {:ok, value, _migrated?} when is_map(value) ->
-        # Recursively resolve any refs in the map values
-        resolved_value = resolve_nested_refs(pstate, value, new_visited)
-        {:ok, resolved_value}
+        if depth_exceeded? do
+          # Don't resolve nested refs, return as-is
+          {:ok, value}
+        else
+          # Recursively resolve any refs in the map values
+          resolved_value = resolve_nested_refs(pstate, value, new_visited, max_depth)
+          {:ok, resolved_value}
+        end
 
       {:ok, value, _migrated?} ->
         {:ok, value}
@@ -249,7 +337,7 @@ defmodule PState do
   end
 
   # Recursively resolve refs in nested data structures
-  defp resolve_nested_refs(pstate, value, visited) when is_map(value) do
+  defp resolve_nested_refs(pstate, value, visited, max_depth) when is_map(value) do
     Map.new(value, fn {k, v} ->
       resolved_v =
         case v do
@@ -261,15 +349,15 @@ defmodule PState do
               # Leave as Ref - don't resolve to avoid circular resolution
               v
             else
-              # Resolve ref using the same visited set
-              case fetch_with_visited(pstate, ref_key, visited) do
+              # Resolve ref using the same visited set and depth limit
+              case fetch_with_visited(pstate, ref_key, visited, max_depth) do
                 {:ok, resolved} -> resolved
                 :error -> v
               end
             end
 
           nested when is_map(nested) ->
-            resolve_nested_refs(pstate, nested, visited)
+            resolve_nested_refs(pstate, nested, visited, max_depth)
 
           other ->
             other
@@ -279,7 +367,7 @@ defmodule PState do
     end)
   end
 
-  defp resolve_nested_refs(_pstate, value, _visited), do: value
+  defp resolve_nested_refs(_pstate, value, _visited, _max_depth), do: value
 
   # Preloading API
 

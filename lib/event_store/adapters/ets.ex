@@ -30,14 +30,33 @@ defmodule EventStore.Adapters.ETS do
   @impl true
   def init(opts \\ []) do
     table_name = Keyword.get(opts, :table_name, :event_store)
+    entity_index_name = :"#{table_name}_entity_idx"
 
     # Main events table: ordered by event_id
     # Use :public for cross-process access, :ordered_set for sequential scanning
-    events = :ets.new(table_name, [:ordered_set, :public, :named_table])
+    # Check if table already exists and clear it for idempotent initialization
+    events =
+      case :ets.whereis(table_name) do
+        :undefined ->
+          :ets.new(table_name, [:ordered_set, :public, :named_table])
+
+        existing_table ->
+          :ets.delete_all_objects(existing_table)
+          existing_table
+      end
 
     # Entity index: {{entity_id, event_id}, nil}
     # Composite key allows efficient range scans by entity_id
-    entity_index = :ets.new(:"#{table_name}_entity_idx", [:ordered_set, :public])
+    # Note: Entity index is not a named table, so we need to delete and recreate
+    entity_index =
+      case :ets.whereis(entity_index_name) do
+        :undefined ->
+          :ets.new(entity_index_name, [:ordered_set, :public, :named_table])
+
+        existing_index ->
+          :ets.delete_all_objects(existing_index)
+          existing_index
+      end
 
     # Atomic sequence counter for thread-safe ID generation
     sequence = :atomics.new(1, signed: false)

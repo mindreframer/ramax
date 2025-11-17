@@ -75,98 +75,103 @@ defmodule FlashcardDemo do
 
     # Initialize app with in-memory adapters
     IO.puts("📦 Initializing FlashcardApp with in-memory storage...")
-    app = FlashcardApp.new()
-    IO.puts("✓ App initialized\n")
+    {time_init, app} = :timer.tc(fn -> FlashcardApp.new() end)
+    IO.puts("✓ App initialized (#{time_init / 1000}ms)\n")
 
     # Create Spanish learning deck
     IO.puts("📚 Creating 'Spanish Basics' deck...")
-    {:ok, app} = FlashcardApp.create_deck(app, "spanish-101", "Spanish Basics")
-    IO.puts("✓ Deck created: spanish-101\n")
+    {time_deck, {:ok, app}} = :timer.tc(fn -> FlashcardApp.create_deck(app, "spanish-101", "Spanish Basics") end)
+    IO.puts("✓ Deck created: spanish-101 (#{time_deck / 1000}ms)\n")
 
-    # Add 5 basic vocabulary cards
-    IO.puts("📝 Adding basic vocabulary cards...")
+    # Add 1500 cards for performance testing
+    num_cards = 1500
+    IO.puts("📝 Adding #{num_cards} vocabulary cards...")
 
-    card_data = [
-      {"card-1", "Hello", "Hola"},
-      {"card-2", "Goodbye", "Adiós"},
-      {"card-3", "Thank you", "Gracias"},
-      {"card-4", "Please", "Por favor"},
-      {"card-5", "Yes", "Sí"}
-    ]
+    {time_cards, app} =
+      :timer.tc(fn ->
+        Enum.reduce(1..num_cards, app, fn i, acc_app ->
+          card_id = "card-#{i}"
+          front = "Word #{i}"
+          back = "Palabra #{i}"
 
-    app =
-      Enum.reduce(card_data, app, fn {card_id, front, back}, acc_app ->
-        {:ok, updated_app} =
-          FlashcardApp.create_card(acc_app, card_id, "spanish-101", front, back)
+          {:ok, updated_app} =
+            FlashcardApp.create_card(acc_app, card_id, "spanish-101", front, back)
 
-        IO.puts("  ✓ Created card: #{front} → #{back}")
-        updated_app
+          # Print progress every 100 cards
+          if rem(i, 100) == 0 do
+            IO.puts("  ✓ Created #{i} cards...")
+          end
+
+          updated_app
+        end)
       end)
 
-    IO.puts("")
+    IO.puts("  Total time for #{num_cards} cards: #{time_cards / 1000}ms\n")
 
-    # Add English translations to back fields (for Spanish → English)
-    IO.puts("🌍 Adding English translations...")
+    # Add English translations to first 100 cards
+    num_translations = 100
+    IO.puts("🌍 Adding English translations to first #{num_translations} cards...")
 
-    english_translations = [
-      {"card-1", :back, "en", "Hello"},
-      {"card-2", :back, "en", "Goodbye"},
-      {"card-3", :back, "en", "Thank you"},
-      {"card-4", :back, "en", "Please"},
-      {"card-5", :back, "en", "Yes"}
-    ]
+    {time_en_trans, app} =
+      :timer.tc(fn ->
+        Enum.reduce(1..num_translations, app, fn i, acc_app ->
+          card_id = "card-#{i}"
+          {:ok, updated_app} =
+            FlashcardApp.add_translation(acc_app, card_id, :back, "en", "Word #{i}")
 
-    app =
-      Enum.reduce(english_translations, app, fn {card_id, field, lang, translation}, acc_app ->
-        {:ok, updated_app} =
-          FlashcardApp.add_translation(acc_app, card_id, field, lang, translation)
+          if rem(i, 20) == 0 do
+            IO.puts("  ✓ Added #{i} translations...")
+          end
 
-        IO.puts("  ✓ Added translation: #{card_id} (#{field}) → #{translation}")
-        updated_app
+          updated_app
+        end)
       end)
 
-    IO.puts("")
+    IO.puts("  Total time for #{num_translations} English translations: #{time_en_trans / 1000}ms\n")
 
-    # Add French translations
-    IO.puts("🇫🇷 Adding French translations...")
+    # Add French translations to first 50 cards
+    num_fr_translations = 50
+    IO.puts("🇫🇷 Adding French translations to first #{num_fr_translations} cards...")
 
-    french_translations = [
-      {"card-1", :front, "fr", "Bonjour"},
-      {"card-2", :front, "fr", "Au revoir"},
-      {"card-3", :front, "fr", "Merci"},
-      {"card-4", :front, "fr", "S'il vous plaît"},
-      {"card-5", :front, "fr", "Oui"}
-    ]
+    {time_fr_trans, app} =
+      :timer.tc(fn ->
+        Enum.reduce(1..num_fr_translations, app, fn i, acc_app ->
+          card_id = "card-#{i}"
+          {:ok, updated_app} =
+            FlashcardApp.add_translation(acc_app, card_id, :front, "fr", "Mot #{i}")
 
-    app =
-      Enum.reduce(french_translations, app, fn {card_id, field, lang, translation}, acc_app ->
-        {:ok, updated_app} =
-          FlashcardApp.add_translation(acc_app, card_id, field, lang, translation)
+          if rem(i, 10) == 0 do
+            IO.puts("  ✓ Added #{i} translations...")
+          end
 
-        IO.puts("  ✓ Added translation: #{card_id} (#{field}) → #{translation}")
-        updated_app
+          updated_app
+        end)
       end)
 
-    IO.puts("")
+    IO.puts("  Total time for #{num_fr_translations} French translations: #{time_fr_trans / 1000}ms\n")
 
     # Update a card to demonstrate translation invalidation
     IO.puts("✏️  Updating card-1 (significant change)...")
-    {:ok, app} = FlashcardApp.update_card(app, "card-1", "Hello!", "¡Hola!")
-    IO.puts("✓ Card updated: Hello! → ¡Hola!")
+    {time_update, {:ok, app}} = :timer.tc(fn -> FlashcardApp.update_card(app, "card-1", "Hello!", "¡Hola!") end)
+    IO.puts("✓ Card updated: Hello! → ¡Hola! (#{time_update / 1000}ms)")
     IO.puts("  (Translations may be invalidated due to significant change)\n")
 
     # Query and display deck information
     IO.puts("📊 Querying deck information...")
-    {:ok, deck} = FlashcardApp.get_deck(app, "spanish-101")
+    {time_query, {:ok, deck}} = :timer.tc(fn -> FlashcardApp.get_deck(app, "spanish-101") end)
     IO.puts("Deck: #{deck.name}")
-    IO.puts("Cards in deck: #{map_size(deck.cards)}\n")
+    IO.puts("Cards in deck: #{map_size(deck.cards)} (query took #{time_query / 1000}ms)\n")
 
-    # Display cards with translations
-    IO.puts("📋 Cards with translations:")
-    {:ok, cards} = FlashcardApp.list_deck_cards(app, "spanish-101")
+    # Display sample cards with translations (first 5 only)
+    IO.puts("📋 Listing all cards (#{num_cards} total):")
+    {time_list, {:ok, cards}} = :timer.tc(fn -> FlashcardApp.list_deck_cards(app, "spanish-101") end)
+    IO.puts("  (Listing #{length(cards)} cards took #{time_list / 1000}ms)")
+    IO.puts("  Showing first 5 cards:\n")
 
-    Enum.each(cards, fn card ->
-      IO.puts("\n  Card: #{card.id}")
+    cards
+    |> Enum.take(5)
+    |> Enum.each(fn card ->
+      IO.puts("  Card: #{card.id}")
       IO.puts("    Front: #{card.front}")
       IO.puts("    Back: #{card.back}")
 
@@ -186,9 +191,9 @@ defmodule FlashcardDemo do
             :ok
         end)
       end
-    end)
 
-    IO.puts("")
+      IO.puts("")
+    end)
 
     # Show event count
     event_count = FlashcardApp.get_event_count(app)
@@ -196,17 +201,24 @@ defmodule FlashcardDemo do
 
     # Rebuild PState from events
     IO.puts("🔄 Rebuilding PState from event store...")
-    {:ok, deck_before_rebuild} = FlashcardApp.get_deck(app, "spanish-101")
-    {:ok, cards_before_rebuild} = FlashcardApp.list_deck_cards(app, "spanish-101")
+    {time_rebuild_prep, {deck_before_rebuild, cards_before_rebuild}} = :timer.tc(fn ->
+      {:ok, deck} = FlashcardApp.get_deck(app, "spanish-101")
+      {:ok, cards} = FlashcardApp.list_deck_cards(app, "spanish-101")
+      {deck, cards}
+    end)
 
-    app = FlashcardApp.rebuild(app)
+    {time_rebuild, app} = :timer.tc(fn -> FlashcardApp.rebuild(app) end)
+    IO.puts("  Rebuild took #{time_rebuild / 1000}ms")
 
-    {:ok, deck_after_rebuild} = FlashcardApp.get_deck(app, "spanish-101")
-    {:ok, cards_after_rebuild} = FlashcardApp.list_deck_cards(app, "spanish-101")
+    {time_verify, {deck_after_rebuild, cards_after_rebuild}} = :timer.tc(fn ->
+      {:ok, deck} = FlashcardApp.get_deck(app, "spanish-101")
+      {:ok, cards} = FlashcardApp.list_deck_cards(app, "spanish-101")
+      {deck, cards}
+    end)
 
     # Verify data integrity
     if deck_before_rebuild == deck_after_rebuild and cards_before_rebuild == cards_after_rebuild do
-      IO.puts("✓ Rebuild successful - data integrity verified!")
+      IO.puts("✓ Rebuild successful - data integrity verified! (verification took #{time_verify / 1000}ms)")
     else
       IO.puts("⚠️  Warning: Data mismatch after rebuild")
     end
@@ -216,11 +228,27 @@ defmodule FlashcardDemo do
     # Print statistics
     IO.puts("📊 Demo Statistics:")
     IO.puts("  Decks created: 1")
-    IO.puts("  Cards created: 5")
-    IO.puts("  Translations added: 10")
+    IO.puts("  Cards created: #{num_cards}")
+    IO.puts("  Translations added: #{num_translations + num_fr_translations}")
     IO.puts("  Card updates: 1")
     IO.puts("  Total events: #{event_count}")
     IO.puts("  PState rebuilds: 1")
+
+    IO.puts("\n⏱️  Timing Breakdown:")
+    IO.puts("  Initialization: #{time_init / 1000}ms")
+    IO.puts("  Create deck: #{time_deck / 1000}ms")
+    IO.puts("  Create cards (#{num_cards}): #{time_cards / 1000}ms (#{Float.round(num_cards / (time_cards / 1_000_000), 1)} cards/sec)")
+    IO.puts("  English translations (#{num_translations}): #{time_en_trans / 1000}ms")
+    IO.puts("  French translations (#{num_fr_translations}): #{time_fr_trans / 1000}ms")
+    IO.puts("  Update card: #{time_update / 1000}ms")
+    IO.puts("  Query deck: #{time_query / 1000}ms")
+    IO.puts("  List cards: #{time_list / 1000}ms")
+    IO.puts("  Rebuild PState: #{time_rebuild / 1000}ms")
+    IO.puts("  Verify rebuild: #{time_verify / 1000}ms")
+
+    total_time = time_init + time_deck + time_cards + time_en_trans + time_fr_trans +
+                 time_update + time_query + time_list + time_rebuild + time_verify
+    IO.puts("  TOTAL: #{total_time / 1000}ms")
 
     IO.puts("\n========================================")
     IO.puts("✓ Demo completed successfully!")

@@ -17,6 +17,12 @@ defmodule ContentStore.EventApplicator do
   4. **Must remain backward compatible** - Old events must still apply
   5. **Pure functions** - Same event + same PState = same result
 
+  ## Performance Note
+
+  Event applicators safely use standard `put_in/update_in` functions because
+  `pstate[key]` now defaults to depth: 0 (no automatic reference resolution).
+  This prevents O(n²) performance degradation with circular references.
+
   ## Schema Evolution Example
 
       # Old event from v1 (no translations field)
@@ -114,6 +120,7 @@ defmodule ContentStore.EventApplicator do
       created_at: DateTime.to_unix(event.metadata.timestamp)
     }
 
+    # Safe to use put_in now that pstate[key] doesn't auto-resolve (depth: 0)
     put_in(pstate[deck_key], deck_data)
   end
 
@@ -132,6 +139,7 @@ defmodule ContentStore.EventApplicator do
       created_at: DateTime.to_unix(event.metadata.timestamp)
     }
 
+    # Safe to use put_in/update_in now that pstate[key] doesn't auto-resolve
     pstate = put_in(pstate[card_key], card_data)
 
     # Add card to deck's cards map
@@ -149,6 +157,7 @@ defmodule ContentStore.EventApplicator do
     p = event.payload
     card_key = "card:#{p.card_id}"
 
+    # Safe to use update_in now that pstate[key] doesn't auto-resolve
     update_in(pstate[card_key], fn card ->
       card
       |> Map.put(:front, p.front)
@@ -161,6 +170,7 @@ defmodule ContentStore.EventApplicator do
     p = event.payload
     card_key = "card:#{p.card_id}"
 
+    # Safe to use update_in now that pstate[key] doesn't auto-resolve (depth: 0)
     update_in(pstate[card_key], fn card ->
       translations_for_field = get_in(card, [:translations, p.field]) || %{}
 
@@ -178,6 +188,7 @@ defmodule ContentStore.EventApplicator do
     p = event.payload
     card_key = "card:#{p.card_id}"
 
+    # Safe to use update_in now that pstate[key] doesn't auto-resolve (depth: 0)
     update_in(pstate[card_key], fn card ->
       put_in(card, [:translations, :_invalidated], true)
     end)

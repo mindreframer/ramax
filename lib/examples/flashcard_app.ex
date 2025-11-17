@@ -331,6 +331,9 @@ defmodule FlashcardApp do
   """
   @spec get_card(t(), String.t()) :: {:ok, map()} | :error
   def get_card(app, card_id) do
+    # Use depth: 0 to get card with deck as a Ref (not resolved)
+    # This avoids loading the deck with all 1500+ card refs
+    # If you need deck info, fetch it separately with get_deck/2
     PState.fetch(app.store.pstate, "card:#{card_id}")
   end
 
@@ -363,7 +366,9 @@ defmodule FlashcardApp do
           deck.cards
           |> Map.keys()
           |> Enum.map(fn card_id ->
-            {:ok, card} = get_card(app, card_id)
+            # Use depth: 0 for listing - we don't need deck info in each card
+            # since we already know which deck we're querying
+            {:ok, card} = PState.fetch(app.store.pstate, "card:#{card_id}")
             card
           end)
 
