@@ -73,10 +73,26 @@ defmodule FlashcardDemo do
     IO.puts("FLASHCARD APP - EVENT SOURCING DEMO")
     IO.puts("========================================\n")
 
-    # Initialize app with in-memory adapters
-    IO.puts("📦 Initializing FlashcardApp with in-memory storage...")
-    {time_init, app} = :timer.tc(fn -> FlashcardApp.new() end)
-    IO.puts("✓ App initialized (#{time_init / 1000}ms)\n")
+    # Initialize app with SQLite adapters
+    IO.puts("📦 Initializing FlashcardApp with SQLite storage...")
+    event_db_path = "/tmp/flashcard_demo_events.db"
+    pstate_db_path = "/tmp/flashcard_demo_pstate.db"
+
+    # Clean up old databases if they exist
+    if File.exists?(event_db_path), do: File.rm!(event_db_path)
+    if File.exists?(pstate_db_path), do: File.rm!(pstate_db_path)
+
+    {time_init, app} = :timer.tc(fn ->
+      FlashcardApp.new(
+        event_adapter: EventStore.Adapters.SQLite,
+        event_opts: [database: event_db_path],
+        pstate_adapter: PState.Adapters.SQLite,
+        pstate_opts: [path: pstate_db_path]
+      )
+    end)
+    IO.puts("✓ App initialized with SQLite (#{time_init / 1000}ms)")
+    IO.puts("  Events: #{event_db_path}")
+    IO.puts("  PState: #{pstate_db_path}\n")
 
     # Create Spanish learning deck
     IO.puts("📚 Creating 'Spanish Basics' deck...")

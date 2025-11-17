@@ -72,11 +72,12 @@ defmodule ContentStore do
 
   alias ContentStore.EventApplicator
 
-  defstruct [:event_store, :pstate]
+  defstruct [:event_store, :pstate, :config]
 
   @type t :: %__MODULE__{
           event_store: EventStore.t(),
-          pstate: PState.t()
+          pstate: PState.t(),
+          config: map()
         }
 
   @doc """
@@ -110,25 +111,36 @@ defmodule ContentStore do
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
+    # Store config for rebuild
+    config = %{
+      event_adapter: Keyword.get(opts, :event_adapter, EventStore.Adapters.ETS),
+      event_opts: Keyword.get(opts, :event_opts, []),
+      pstate_adapter: Keyword.get(opts, :pstate_adapter, PState.Adapters.ETS),
+      pstate_opts: Keyword.get(opts, :pstate_opts, []),
+      root_key: Keyword.get(opts, :root_key, "content:root"),
+      schema: Keyword.get(opts, :schema)
+    }
+
     # Initialize event store
     {:ok, event_store} =
       EventStore.new(
-        Keyword.get(opts, :event_adapter, EventStore.Adapters.ETS),
-        Keyword.get(opts, :event_opts, [])
+        config.event_adapter,
+        config.event_opts
       )
 
     # Initialize PState
     pstate =
       PState.new(
-        Keyword.get(opts, :root_key, "content:root"),
-        adapter: Keyword.get(opts, :pstate_adapter, PState.Adapters.ETS),
-        adapter_opts: Keyword.get(opts, :pstate_opts, []),
-        schema: Keyword.get(opts, :schema)
+        config.root_key,
+        adapter: config.pstate_adapter,
+        adapter_opts: config.pstate_opts,
+        schema: config.schema
       )
 
     %__MODULE__{
       event_store: event_store,
-      pstate: pstate
+      pstate: pstate,
+      config: config
     }
   end
 
@@ -235,13 +247,13 @@ defmodule ContentStore do
 
     IO.puts("Rebuilding PState from event store...")
 
-    # Create fresh PState with current schema
+    # Create fresh PState using stored config
     fresh_pstate =
       PState.new(
-        store.pstate.root_key,
-        adapter: store.pstate.adapter,
-        adapter_opts: Keyword.get(opts, :pstate_opts, []),
-        schema: store.pstate.schema
+        store.config.root_key,
+        adapter: store.config.pstate_adapter,
+        adapter_opts: store.config.pstate_opts,
+        schema: store.config.schema
       )
 
     # Stream and apply all events

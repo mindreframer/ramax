@@ -37,6 +37,7 @@ defmodule EventStore.Adapters.SQLite do
         Exqlite.Sqlite3.execute(db, "PRAGMA journal_mode=WAL")
         Exqlite.Sqlite3.execute(db, "PRAGMA synchronous=NORMAL")
         Exqlite.Sqlite3.execute(db, "PRAGMA cache_size=-64000")
+        Exqlite.Sqlite3.execute(db, "PRAGMA busy_timeout=5000")
 
         # Create events table
         Exqlite.Sqlite3.execute(db, """
@@ -108,6 +109,9 @@ defmodule EventStore.Adapters.SQLite do
           :done ->
             {:ok, event_id} = Exqlite.Sqlite3.last_insert_rowid(state.db)
             {:ok, event_id, state}
+
+          :busy ->
+            {:error, :database_busy}
 
           {:error, reason} ->
             {:error, reason}

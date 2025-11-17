@@ -13,6 +13,7 @@ defmodule PState.Ref do
   """
 
   @enforce_keys [:key]
+  @derive {Jason.Encoder, only: [:key]}
   defstruct [:key]
 
   @type t :: %__MODULE__{

@@ -43,6 +43,7 @@ defmodule PState.Adapters.SQLite do
 
     # Enable WAL mode for better concurrency
     :ok = Exqlite.Sqlite3.execute(conn, "PRAGMA journal_mode=WAL")
+    :ok = Exqlite.Sqlite3.execute(conn, "PRAGMA busy_timeout=5000")
 
     # Create table
     create_table_sql = """
