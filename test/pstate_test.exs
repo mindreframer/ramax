@@ -10,6 +10,7 @@ defmodule PStateTest do
         root_key: "track:uuid",
         adapter: PState.Adapters.ETS,
         adapter_state: %{table: :test_table},
+        schema: nil,
         cache: %{},
         ref_cache: %{}
       }
@@ -17,6 +18,7 @@ defmodule PStateTest do
       assert pstate.root_key == "track:uuid"
       assert pstate.adapter == PState.Adapters.ETS
       assert pstate.adapter_state == %{table: :test_table}
+      assert pstate.schema == nil
       assert pstate.cache == %{}
       assert pstate.ref_cache == %{}
     end
@@ -279,6 +281,98 @@ defmodule PStateTest do
       resolved_card = deck.cards[card_id]
       assert resolved_card.front == "Hello"
       assert resolved_card.back == "Hola"
+    end
+  end
+
+  describe "PState schema integration (RMX002_7A)" do
+    defmodule TestSchema do
+      use PState.Schema
+
+      entity :base_card do
+        field(:id, :string)
+        field(:front, :string)
+        field(:back, :string)
+      end
+
+      entity :base_deck do
+        field(:id, :string)
+        field(:title, :string)
+        has_many(:cards, ref: :base_card)
+      end
+    end
+
+    test "RMX002_7A_T1: PState.new accepts :schema option" do
+      pstate =
+        PState.new("track:uuid",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_schema_1],
+          schema: TestSchema
+        )
+
+      assert %PState{} = pstate
+      assert pstate.schema == TestSchema
+    end
+
+    test "RMX002_7A_T2: PState stores schema module" do
+      pstate =
+        PState.new("track:uuid",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_schema_2],
+          schema: TestSchema
+        )
+
+      # Verify schema is stored correctly
+      assert pstate.schema == TestSchema
+      # Verify we can call schema introspection functions
+      entities = pstate.schema.__schema__(:entities)
+      assert is_map(entities)
+      assert Map.has_key?(entities, :base_card)
+      assert Map.has_key?(entities, :base_deck)
+    end
+
+    test "RMX002_7A_T3: PState without schema defaults to nil" do
+      pstate =
+        PState.new("track:uuid",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_schema_3]
+        )
+
+      # Schema should be nil when not provided
+      assert pstate.schema == nil
+    end
+
+    test "RMX002_7A_T4: accessing schema from PState" do
+      pstate =
+        PState.new("track:uuid",
+          adapter: PState.Adapters.ETS,
+          adapter_opts: [table_name: :test_schema_4],
+          schema: TestSchema
+        )
+
+      # Access schema and query entities
+      assert pstate.schema == TestSchema
+
+      # Get base_card entity fields
+      card_fields = pstate.schema.__schema__(:fields, :base_card)
+      assert is_list(card_fields)
+      assert length(card_fields) == 3
+
+      # Verify field names
+      field_names = Enum.map(card_fields, & &1.name)
+      assert :id in field_names
+      assert :front in field_names
+      assert :back in field_names
+
+      # Get base_deck entity fields
+      deck_fields = pstate.schema.__schema__(:fields, :base_deck)
+      assert is_list(deck_fields)
+      assert length(deck_fields) == 3
+
+      # Verify has_many field type
+      cards_field = Enum.find(deck_fields, &(&1.name == :cards))
+      assert cards_field != nil
+      assert cards_field.type == :collection
+      assert cards_field.ref_type == :base_card
     end
   end
 end

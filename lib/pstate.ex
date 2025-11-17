@@ -31,6 +31,7 @@ defmodule PState do
     :root_key,
     :adapter,
     :adapter_state,
+    :schema,
     cache: %{},
     ref_cache: %{}
   ]
@@ -39,6 +40,7 @@ defmodule PState do
           root_key: String.t(),
           adapter: module(),
           adapter_state: term(),
+          schema: module() | nil,
           cache: %{String.t() => term()},
           ref_cache: %{String.t() => term()}
         }
@@ -53,6 +55,7 @@ defmodule PState do
 
   - `:adapter` - The adapter module to use (required)
   - `:adapter_opts` - Options to pass to the adapter's init/1 callback (default: [])
+  - `:schema` - Optional schema module that defines entity structures (default: nil)
 
   ## Examples
 
@@ -61,6 +64,13 @@ defmodule PState do
       ...>   adapter_opts: [table_name: :my_pstate]
       ...> )
       %PState{root_key: "track:550e8400-...", ...}
+
+      iex> PState.new("track:550e8400-e29b-41d4-a716-446655440000",
+      ...>   adapter: PState.Adapters.ETS,
+      ...>   adapter_opts: [table_name: :my_pstate],
+      ...>   schema: MyApp.ContentSchema
+      ...> )
+      %PState{root_key: "track:550e8400-...", schema: MyApp.ContentSchema, ...}
 
   ## Errors
 
@@ -73,6 +83,7 @@ defmodule PState do
   def new(root_key, opts \\ []) when is_binary(root_key) do
     adapter = Keyword.fetch!(opts, :adapter)
     adapter_opts = Keyword.get(opts, :adapter_opts, [])
+    schema = Keyword.get(opts, :schema, nil)
 
     case adapter.init(adapter_opts) do
       {:ok, adapter_state} ->
@@ -80,6 +91,7 @@ defmodule PState do
           root_key: root_key,
           adapter: adapter,
           adapter_state: adapter_state,
+          schema: schema,
           cache: %{},
           ref_cache: %{}
         }
