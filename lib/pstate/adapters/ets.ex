@@ -142,4 +142,11 @@ defmodule PState.Adapters.ETS do
   rescue
     error -> {:error, error}
   end
+
+  @impl true
+  def close(_state) do
+    # ETS tables are automatically cleaned up when the process terminates
+    # No explicit cleanup needed
+    :ok
+  end
 end

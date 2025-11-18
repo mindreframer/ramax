@@ -193,4 +193,18 @@ defmodule EventStore.Adapter do
   """
   @callback get_space_latest_sequence(state, space_id) ::
               {:ok, space_sequence()} | {:ok, 0} | {:error, term()}
+
+  @doc """
+  Close the adapter and release any resources (database connections, file handles, etc.).
+
+  This is optional for in-memory adapters but critical for adapters that hold persistent
+  resources like database connections.
+
+  Returns `:ok` on success or `{:error, reason}` on failure.
+
+  ## Examples
+
+      :ok = MyAdapter.close(state)
+  """
+  @callback close(state) :: :ok | {:error, term()}
 end

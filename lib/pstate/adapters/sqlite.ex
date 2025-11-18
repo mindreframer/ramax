@@ -250,4 +250,12 @@ defmodule PState.Adapters.SQLite do
         acc
     end
   end
+
+  @impl true
+  def close(%__MODULE__{conn: conn}) do
+    case Exqlite.Sqlite3.close(conn) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

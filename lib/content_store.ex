@@ -123,8 +123,15 @@ defmodule ContentStore do
   ## Options
 
   - `:space_name` - Space name (required, e.g., "crm_acme")
+  - `:event_store` - Existing EventStore instance to reuse (optional)
+    - If provided, event_adapter and event_opts are ignored
+    - Useful for sharing a single database connection across multiple spaces
   - `:event_adapter` - EventStore adapter module (default: `EventStore.Adapters.ETS`)
   - `:event_opts` - Options to pass to EventStore adapter (default: `[]`)
+  - `:pstate_template` - Existing PState instance to copy adapter_state from (optional)
+    - If provided, pstate_adapter and pstate_opts are ignored
+    - Creates a new PState with same adapter_state but different space_id
+    - Useful for sharing a single database connection across multiple spaces
   - `:pstate_adapter` - PState adapter module (default: `PState.Adapters.ETS`)
   - `:pstate_opts` - Options to pass to PState adapter (default: `[]`)
   - `:root_key` - Root key for PState (default: `"content:root"`)
@@ -150,6 +157,27 @@ defmodule ContentStore do
         root_key: "content:root"
       )
 
+      # Multiple spaces with SQLite: Each space gets its own connections
+      # This is the recommended pattern for SQLite to avoid "database busy" errors
+      {:ok, store_a} = ContentStore.new(
+        space_name: "tenant_a",
+        event_adapter: EventStore.Adapters.SQLite,
+        event_opts: [database: "app.db"],
+        pstate_adapter: PState.Adapters.SQLite,
+        pstate_opts: [path: "app.db"]
+      )
+
+      {:ok, store_b} = ContentStore.new(
+        space_name: "tenant_b",
+        event_adapter: EventStore.Adapters.SQLite,
+        event_opts: [database: "app.db"],      # Same file, different connection
+        pstate_adapter: PState.Adapters.SQLite,
+        pstate_opts: [path: "app.db"]         # Same file, different connection
+      )
+
+      # Connection sharing is possible but not recommended for SQLite
+      # Use it only for in-memory adapters (ETS) or when you control write sequencing
+
   """
   @spec new(keyword()) :: {:ok, t()} | {:error, term()}
   def new(opts \\ []) do
@@ -170,25 +198,52 @@ defmodule ContentStore do
       entity_id_extractor: Keyword.get(opts, :entity_id_extractor, fn _payload -> root_key end)
     }
 
-    # Initialize event store (shared across spaces)
-    {:ok, event_store} =
-      EventStore.new(
-        config.event_adapter,
-        config.event_opts
-      )
+    # Use provided event store or create a new one
+    event_store =
+      case Keyword.get(opts, :event_store) do
+        nil ->
+          # Initialize new event store
+          {:ok, store} =
+            EventStore.new(
+              config.event_adapter,
+              config.event_opts
+            )
+
+          store
+
+        existing_store ->
+          # Reuse existing event store
+          existing_store
+      end
 
     # Get or create space
     case Ramax.Space.get_or_create(event_store, space_name) do
       {:ok, space, updated_event_store} ->
         # Initialize PState with space_id from space
         pstate =
-          PState.new(
-            config.root_key,
-            space_id: space.space_id,
-            adapter: config.pstate_adapter,
-            adapter_opts: config.pstate_opts,
-            schema: config.schema
-          )
+          case Keyword.get(opts, :pstate_template) do
+            nil ->
+              # Create new PState with new adapter connection
+              PState.new(
+                config.root_key,
+                space_id: space.space_id,
+                adapter: config.pstate_adapter,
+                adapter_opts: config.pstate_opts,
+                schema: config.schema
+              )
+
+            template ->
+              # Reuse adapter_state from template but with new space_id
+              %PState{
+                root_key: config.root_key,
+                space_id: space.space_id,
+                adapter: template.adapter,
+                adapter_state: template.adapter_state,
+                schema: config.schema || template.schema,
+                cache: %{},
+                ref_cache: %{}
+              }
+          end
 
         store = %__MODULE__{
           space: space,
@@ -482,5 +537,39 @@ defmodule ContentStore do
       {:ok, event} = EventStore.get_event(event_store, id)
       event
     end)
+  end
+
+  @doc """
+  Close the ContentStore and release all resources.
+
+  This closes both the EventStore and PState adapter connections, freeing any
+  database connections or file handles.
+
+  This is critical when working with SQLite adapters to prevent "database busy"
+  errors when multiple spaces share the same database file.
+
+  Returns `:ok` on success or `{:error, reason}` on failure.
+
+  ## Examples
+
+      {:ok, store} = ContentStore.new(space_name: "my_space")
+      # ... use the store ...
+      :ok = ContentStore.close(store)
+
+  """
+  @spec close(t()) :: :ok | {:error, term()}
+  def close(store) do
+    # Close EventStore connection
+    event_result = store.event_store.adapter.close(store.event_store.adapter_state)
+
+    # Close PState connection
+    pstate_result = store.pstate.adapter.close(store.pstate.adapter_state)
+
+    # Return error if either failed
+    case {event_result, pstate_result} do
+      {:ok, :ok} -> :ok
+      {{:error, reason}, _} -> {:error, {:event_store_close_failed, reason}}
+      {_, {:error, reason}} -> {:error, {:pstate_close_failed, reason}}
+    end
   end
 end

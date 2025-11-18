@@ -80,7 +80,8 @@ defmodule SpaceDemo do
 
     # Initialize EventStore
     # {:ok, event_store} = EventStore.new(EventStore.Adapters.ETS)
-    {:ok, event_store} = EventStore.new(EventStore.Adapters.SQLite, database: "events.db")
+    {:ok, event_store} =
+      EventStore.new(EventStore.Adapters.SQLite, database: "data/basic_space_events.db")
 
     # Create multiple spaces
     Logger.info("Creating spaces...")
@@ -123,6 +124,9 @@ defmodule SpaceDemo do
     {:ok, remaining_spaces} = Ramax.Space.list_all(event_store)
     Logger.info("  ✓ Deleted. Remaining spaces: #{length(remaining_spaces)}")
 
+    # Cleanup resources
+    :ok = event_store.adapter.close(event_store.adapter_state)
+
     :ok
   end
 
@@ -140,17 +144,29 @@ defmodule SpaceDemo do
     Logger.info("")
     Logger.info("--- Demo 2: Space Isolation ---")
 
-    # Create two isolated ContentStores
+    # Create a SINGLE shared EventStore for both spaces using SQLite
+    {:ok, shared_event_store} =
+      EventStore.new(EventStore.Adapters.SQLite, database: "data/isolation_demo.db")
+
+    # Create two isolated ContentStores that share the same EventStore
+    # Use ETS for PState to avoid SQLite connection conflicts
+    # (EventStore and PState would otherwise have 2 separate SQLite connections
+    # to the same file, which can cause database_busy errors)
     {:ok, store_a} =
       ContentStore.new(
         space_name: "isolation_demo_a",
+        event_store: shared_event_store,
+        pstate_adapter: PState.Adapters.ETS,
         event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
 
+    # Reuse the EventStore and PState adapter from store_a
     {:ok, store_b} =
       ContentStore.new(
         space_name: "isolation_demo_b",
+        event_store: store_a.event_store,
+        pstate_template: store_a.pstate,
         event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
@@ -216,6 +232,9 @@ defmodule SpaceDemo do
     Logger.info("  - Space B: #{user_b.name}")
     Logger.info("  ✓ Complete isolation verified")
 
+    # Cleanup resources - close EventStore (ETS PState doesn't need cleanup)
+    :ok = shared_event_store.adapter.close(shared_event_store.adapter_state)
+
     :ok
   end
 
@@ -232,10 +251,14 @@ defmodule SpaceDemo do
     Logger.info("")
     Logger.info("--- Demo 3: Selective Rebuild Performance ---")
 
+    # Create shared EventStore for both spaces
+    {:ok, event_store} = EventStore.new(EventStore.Adapters.ETS)
+
     # Create space with few events
     {:ok, small_store} =
       ContentStore.new(
         space_name: "rebuild_demo_small",
+        event_store: event_store,
         event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
@@ -244,6 +267,7 @@ defmodule SpaceDemo do
     {:ok, large_store} =
       ContentStore.new(
         space_name: "rebuild_demo_large",
+        event_store: small_store.event_store,
         event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
@@ -310,6 +334,10 @@ defmodule SpaceDemo do
 
     Logger.info("  - Other spaces completely unaffected")
     Logger.info("  - Ideal for multi-tenant systems with many tenants")
+
+    # Cleanup resources (ETS adapters are no-ops, but good practice)
+    :ok = ContentStore.close(small_store)
+    :ok = ContentStore.close(large_store)
 
     :ok
   end

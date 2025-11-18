@@ -144,5 +144,19 @@ defmodule PState.Adapter do
   """
   @callback multi_put(state, space_id :: pos_integer(), [{key, value}]) :: :ok | {:error, term()}
 
+  @doc """
+  Close the adapter and release any resources (database connections, file handles, etc.).
+
+  This is optional for in-memory adapters but critical for adapters that hold persistent
+  resources like database connections.
+
+  Returns `:ok` on success or `{:error, reason}` on failure.
+
+  ## Examples
+
+      :ok = MyAdapter.close(state)
+  """
+  @callback close(state) :: :ok | {:error, term()}
+
   @optional_callbacks [multi_get: 3, multi_put: 3]
 end

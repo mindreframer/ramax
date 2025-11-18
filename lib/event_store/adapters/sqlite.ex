@@ -165,6 +165,7 @@ defmodule EventStore.Adapters.SQLite do
             case Exqlite.Sqlite3.step(state.db, stmt) do
               :done ->
                 {:ok, event_id} = Exqlite.Sqlite3.last_insert_rowid(state.db)
+                :ok = Exqlite.Sqlite3.release(state.db, stmt)
 
                 # Commit transaction
                 case Exqlite.Sqlite3.execute(state.db, "COMMIT") do
@@ -177,10 +178,12 @@ defmodule EventStore.Adapters.SQLite do
                 end
 
               :busy ->
+                :ok = Exqlite.Sqlite3.release(state.db, stmt)
                 Exqlite.Sqlite3.execute(state.db, "ROLLBACK")
                 {:error, :database_busy}
 
               {:error, reason} ->
+                :ok = Exqlite.Sqlite3.release(state.db, stmt)
                 Exqlite.Sqlite3.execute(state.db, "ROLLBACK")
                 {:error, reason}
             end
@@ -395,6 +398,14 @@ defmodule EventStore.Adapters.SQLite do
   defp to_hex(n) when n < 10, do: ?0 + n
   defp to_hex(n), do: ?a + n - 10
 
+  @impl true
+  def close(state) do
+    case Exqlite.Sqlite3.close(state.db) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # Space sequence management
 
   # Private helper: Get and increment the space_sequence for a given space_id.
@@ -412,6 +423,7 @@ defmodule EventStore.Adapters.SQLite do
       {:ok, stmt} ->
         :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
         Exqlite.Sqlite3.step(db, stmt)
+        :ok = Exqlite.Sqlite3.release(db, stmt)
 
       {:error, _reason} ->
         :ok
@@ -425,6 +437,7 @@ defmodule EventStore.Adapters.SQLite do
       {:ok, stmt} ->
         :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
         Exqlite.Sqlite3.step(db, stmt)
+        :ok = Exqlite.Sqlite3.release(db, stmt)
 
       {:error, _reason} ->
         :ok
@@ -438,10 +451,14 @@ defmodule EventStore.Adapters.SQLite do
       {:ok, stmt} ->
         :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
 
-        case Exqlite.Sqlite3.step(db, stmt) do
-          {:row, [sequence]} -> sequence
-          _ -> 1
-        end
+        result =
+          case Exqlite.Sqlite3.step(db, stmt) do
+            {:row, [sequence]} -> sequence
+            _ -> 1
+          end
+
+        :ok = Exqlite.Sqlite3.release(db, stmt)
+        result
 
       {:error, _reason} ->
         1
