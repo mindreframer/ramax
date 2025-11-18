@@ -6,13 +6,23 @@ defmodule EventStore.Adapter do
   Adapters can be backed by different storage mechanisms (ETS, SQLite, etc.)
   while providing a consistent API for event sourcing operations.
 
+  ## Space Support
+
+  Events are scoped to spaces (namespaces) for multi-tenancy isolation.
+  Each space has:
+  - `space_id` - Unique integer identifier used in data storage
+  - Per-space sequence numbers independent of other spaces
+  - Complete isolation from events in other spaces
+
   ## Event Structure
 
   Events consist of metadata and payload:
 
       %{
         metadata: %{
-          event_id: 12345,
+          event_id: 12345,                      # Global sequence
+          space_id: 1,                          # Space identifier
+          space_sequence: 42,                   # Per-space sequence
           entity_id: "base_card:uuid",
           event_type: "basecard.created",
           timestamp: ~U[2025-01-17 12:00:00Z],
@@ -28,9 +38,12 @@ defmodule EventStore.Adapter do
 
   - ADR003: Event Store Architecture Decision
   - ADR004: PState Materialization from Events
+  - ADR005: Space Support Architecture Decision
   """
 
   @type event_id :: pos_integer()
+  @type space_id :: pos_integer()
+  @type space_sequence :: pos_integer()
   @type entity_id :: String.t()
   @type event_type :: String.t()
   @type payload :: map()
@@ -39,6 +52,8 @@ defmodule EventStore.Adapter do
 
   @type metadata :: %{
           event_id: event_id(),
+          space_id: space_id(),
+          space_sequence: space_sequence(),
           entity_id: entity_id(),
           event_type: event_type(),
           timestamp: DateTime.t(),
@@ -63,23 +78,33 @@ defmodule EventStore.Adapter do
   @callback init(opts) :: {:ok, state} | {:error, term()}
 
   @doc """
-  Append a new event to the event store.
+  Append a new event to a specific space in the event store.
 
   The adapter is responsible for:
-  - Generating a unique, sequential event_id
+  - Generating a unique, sequential global event_id
+  - Generating a per-space space_sequence
   - Creating event metadata (timestamp, correlation_id if not provided)
-  - Storing the event immutably
+  - Storing the event immutably with space_id
   - Updating any indexes for efficient querying
+
+  ## Parameters
+
+  - `state` - Adapter state
+  - `space_id` - The space to append the event to
+  - `entity_id` - Entity identifier
+  - `event_type` - Event type (dot notation recommended)
+  - `payload` - Application-specific event data
+  - `opts` - Additional options
 
   ## Options
 
   - `:causation_id` - ID of the event that caused this event
   - `:correlation_id` - ID for tracing related events (auto-generated if not provided)
 
-  Returns `{:ok, event_id, new_state}` on success or `{:error, reason}` on failure.
+  Returns `{:ok, event_id, space_sequence, new_state}` on success or `{:error, reason}` on failure.
   """
-  @callback append(state, entity_id, event_type, payload, opts) ::
-              {:ok, event_id, state} | {:error, term()}
+  @callback append(state, space_id, entity_id, event_type, payload, opts) ::
+              {:ok, event_id, space_sequence, state} | {:error, term()}
 
   @doc """
   Get all events for a specific entity.
@@ -139,4 +164,33 @@ defmodule EventStore.Adapter do
   """
   @callback get_latest_sequence(state) ::
               {:ok, event_id()} | {:ok, 0} | {:error, term()}
+
+  @doc """
+  Stream all events for a specific space.
+
+  Returns a lazy enumerable that yields events in the specified space,
+  ordered by space_sequence (ascending).
+
+  ## Options
+
+  - `:from_sequence` - Only stream events with space_sequence > this value (default: 0)
+  - `:batch_size` - Number of events to fetch per batch (default: 1000)
+
+  Returns an `Enumerable.t()` that yields events.
+  """
+  @callback stream_space_events(state, space_id, opts) :: Enumerable.t()
+
+  @doc """
+  Get the latest space sequence number for a specific space.
+
+  Returns the highest space_sequence for the given space_id, or 0 if no events
+  exist in that space.
+
+  ## Examples
+
+      {:ok, 0} = adapter.get_space_latest_sequence(state, 1)
+      {:ok, 42} = adapter.get_space_latest_sequence(state, 1)
+  """
+  @callback get_space_latest_sequence(state, space_id) ::
+              {:ok, space_sequence()} | {:ok, 0} | {:error, term()}
 end

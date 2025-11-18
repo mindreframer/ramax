@@ -7,6 +7,12 @@ defmodule EventStore do
   in append-only fashion, serving as the source of truth for PState
   materialization.
 
+  ## Space Support
+
+  Events are scoped to spaces (namespaces) for multi-tenancy isolation.
+  Each space maintains its own independent sequence numbers while sharing
+  the same underlying storage.
+
   ## Architecture
 
   The EventStore uses an adapter pattern to support different storage backends:
@@ -22,9 +28,10 @@ defmodule EventStore do
       # Initialize with SQLite adapter (production)
       {:ok, store} = EventStore.new(EventStore.Adapters.SQLite, database: "events.db")
 
-      # Append an event
-      {:ok, event_id, store} = EventStore.append(
+      # Append an event to a space
+      {:ok, event_id, space_sequence, store} = EventStore.append(
         store,
+        1,  # space_id
         "base_card:123",
         "basecard.created",
         %{front: "Hello", back: "Hola"}
@@ -37,13 +44,19 @@ defmodule EventStore do
       stream = EventStore.stream_all_events(store, batch_size: 1000)
       stream |> Enum.take(10) |> Enum.each(&IO.inspect/1)
 
+      # Stream events for a specific space
+      stream = EventStore.stream_space_events(store, 1, from_sequence: 0)
+      stream |> Enum.each(&IO.inspect/1)
+
   ## Event Structure
 
   All events share a common structure:
 
       %{
         metadata: %{
-          event_id: 12345,                      # Sequential, unique
+          event_id: 12345,                      # Global sequence
+          space_id: 1,                          # Space identifier
+          space_sequence: 42,                   # Per-space sequence
           entity_id: "base_card:uuid",          # Entity identifier
           event_type: "basecard.created",       # Event type (dot notation)
           timestamp: ~U[2025-01-17 12:00:00Z],  # When event occurred
@@ -59,7 +72,9 @@ defmodule EventStore do
 
   - ADR003: Event Store Architecture Decision
   - ADR004: PState Materialization from Events
+  - ADR005: Space Support Architecture Decision
   - RMX005: Event Store Implementation Epic
+  - RMX007: Space Support for Multi-Tenancy Epic
   """
 
   alias EventStore.Adapter
@@ -74,6 +89,8 @@ defmodule EventStore do
   # Re-export types from Adapter for convenience
   @type event :: Adapter.event()
   @type event_id :: Adapter.event_id()
+  @type space_id :: Adapter.space_id()
+  @type space_sequence :: Adapter.space_sequence()
   @type entity_id :: Adapter.entity_id()
   @type event_type :: Adapter.event_type()
   @type metadata :: Adapter.metadata()
@@ -99,7 +116,16 @@ defmodule EventStore do
   end
 
   @doc """
-  Append a new event to the event store.
+  Append a new event to the event store in a specific space.
+
+  ## Parameters
+
+  - `store` - EventStore instance
+  - `space_id` - Space to append event to
+  - `entity_id` - Entity identifier
+  - `event_type` - Event type (dot notation recommended)
+  - `payload` - Application-specific event data
+  - `opts` - Additional options
 
   ## Options
 
@@ -108,15 +134,17 @@ defmodule EventStore do
 
   ## Examples
 
-      {:ok, event_id, store} = EventStore.append(
+      {:ok, event_id, space_sequence, store} = EventStore.append(
         store,
+        1,  # space_id
         "base_card:123",
         "basecard.created",
         %{front: "Hello", back: "Hola"}
       )
 
-      {:ok, event_id, store} = EventStore.append(
+      {:ok, event_id, space_sequence, store} = EventStore.append(
         store,
+        1,  # space_id
         "base_card:123",
         "basecard.updated",
         %{front: "Hi"},
@@ -124,12 +152,12 @@ defmodule EventStore do
         correlation_id: "batch-update-123"
       )
   """
-  @spec append(t(), entity_id(), event_type(), payload(), keyword()) ::
-          {:ok, event_id(), t()} | {:error, term()}
-  def append(store, entity_id, event_type, payload, opts \\ []) do
-    case store.adapter.append(store.adapter_state, entity_id, event_type, payload, opts) do
-      {:ok, event_id, new_state} ->
-        {:ok, event_id, %{store | adapter_state: new_state}}
+  @spec append(t(), space_id(), entity_id(), event_type(), payload(), keyword()) ::
+          {:ok, event_id(), space_sequence(), t()} | {:error, term()}
+  def append(store, space_id, entity_id, event_type, payload, opts \\ []) do
+    case store.adapter.append(store.adapter_state, space_id, entity_id, event_type, payload, opts) do
+      {:ok, event_id, space_sequence, new_state} ->
+        {:ok, event_id, space_sequence, %{store | adapter_state: new_state}}
 
       {:error, reason} ->
         {:error, reason}
@@ -229,5 +257,48 @@ defmodule EventStore do
   @spec get_latest_sequence(t()) :: {:ok, event_id()} | {:ok, 0} | {:error, term()}
   def get_latest_sequence(store) do
     store.adapter.get_latest_sequence(store.adapter_state)
+  end
+
+  @doc """
+  Stream all events for a specific space.
+
+  Returns a lazy enumerable that yields individual events in the specified space,
+  ordered by space_sequence (ascending).
+
+  ## Options
+
+  - `:from_sequence` - Only stream events with space_sequence > this value (default: 0)
+  - `:batch_size` - Number of events to fetch per batch (default: 1000)
+
+  ## Examples
+
+      # Stream all events in space 1
+      stream = EventStore.stream_space_events(store, 1)
+      Enum.take(stream, 100)
+
+      # Stream from a specific sequence in space 2
+      stream = EventStore.stream_space_events(store, 2, from_sequence: 42)
+      Enum.each(stream, fn event -> IO.inspect(event.metadata.space_sequence) end)
+  """
+  @spec stream_space_events(t(), space_id(), keyword()) :: Enumerable.t()
+  def stream_space_events(store, space_id, opts \\ []) do
+    store.adapter.stream_space_events(store.adapter_state, space_id, opts)
+  end
+
+  @doc """
+  Get the latest space sequence number for a specific space.
+
+  Returns the highest space_sequence for the given space_id, or 0 if no events
+  exist in that space.
+
+  ## Examples
+
+      {:ok, 0} = EventStore.get_space_latest_sequence(store, 1)
+      {:ok, 42} = EventStore.get_space_latest_sequence(store, 1)
+  """
+  @spec get_space_latest_sequence(t(), space_id()) ::
+          {:ok, space_sequence()} | {:ok, 0} | {:error, term()}
+  def get_space_latest_sequence(store, space_id) do
+    store.adapter.get_space_latest_sequence(store.adapter_state, space_id)
   end
 end

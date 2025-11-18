@@ -43,7 +43,7 @@ defmodule EventStoreTest do
 
         def init(_opts), do: {:error, :init_failed}
 
-        def append(_state, _entity_id, _event_type, _payload, _opts),
+        def append(_state, _space_id, _entity_id, _event_type, _payload, _opts),
           do: {:error, :not_implemented}
 
         def get_events(_state, _entity_id, _opts), do: {:error, :not_implemented}
@@ -51,6 +51,8 @@ defmodule EventStoreTest do
         def get_all_events(_state, _opts), do: {:error, :not_implemented}
         def stream_all_events(_state, _opts), do: []
         def get_latest_sequence(_state), do: {:error, :not_implemented}
+        def stream_space_events(_state, _space_id, _opts), do: []
+        def get_space_latest_sequence(_state, _space_id), do: {:error, :not_implemented}
       end
 
       assert {:error, :init_failed} = EventStore.new(FailingAdapter)
@@ -315,6 +317,96 @@ defmodule EventStoreTest do
       # But operations should have effect
       {:ok, events} = EventStore.get_events(store, "entity:1")
       assert length(events) == 3
+    end
+  end
+
+  describe "RMX007_2A: EventStore Space-Aware API" do
+    @tag :skip
+    test "RMX007_2_T1: append/6 accepts space_id parameter" do
+      # This test will be enabled when adapters implement space support (Phase 3-4)
+      table_name = :"test_events_rmx007_t1_#{:erlang.unique_integer([:positive])}"
+      {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
+
+      # Append with space_id
+      assert {:ok, event_id, space_sequence, updated_store} =
+               EventStore.append(
+                 store,
+                 1,
+                 "entity:123",
+                 "entity.created",
+                 %{name: "Test"}
+               )
+
+      assert is_integer(event_id)
+      assert is_integer(space_sequence)
+      assert %EventStore{} = updated_store
+    end
+
+    @tag :skip
+    test "RMX007_2_T2: append/6 returns space_sequence" do
+      # This test will be enabled when adapters implement space support (Phase 3-4)
+      table_name = :"test_events_rmx007_t2_#{:erlang.unique_integer([:positive])}"
+      {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
+
+      # First event in space 1
+      {:ok, _event_id_1, space_seq_1, store} =
+        EventStore.append(store, 1, "entity:1", "event.1", %{})
+
+      # Second event in space 1
+      {:ok, _event_id_2, space_seq_2, store} =
+        EventStore.append(store, 1, "entity:1", "event.2", %{})
+
+      # First event in space 2
+      {:ok, _event_id_3, space_seq_3, _store} =
+        EventStore.append(store, 2, "entity:2", "event.3", %{})
+
+      # Space sequences should be independent
+      assert space_seq_1 == 1
+      assert space_seq_2 == 2
+      assert space_seq_3 == 1
+    end
+
+    @tag :skip
+    test "RMX007_2_T3: stream_space_events/3 delegates to adapter" do
+      # This test will be enabled when adapters implement space support (Phase 3-4)
+      table_name = :"test_events_rmx007_t3_#{:erlang.unique_integer([:positive])}"
+      {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
+
+      # Append events to different spaces
+      {:ok, _id1, _seq1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{value: 1})
+      {:ok, _id2, _seq2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{value: 2})
+      {:ok, _id3, _seq3, store} = EventStore.append(store, 2, "entity:2", "event.3", %{value: 3})
+
+      # Stream space 1 events only
+      stream = EventStore.stream_space_events(store, 1)
+      events = Enum.to_list(stream)
+
+      assert length(events) == 2
+      assert Enum.all?(events, fn e -> e.metadata.space_id == 1 end)
+      assert Enum.map(events, & &1.payload.value) == [1, 2]
+    end
+
+    @tag :skip
+    test "RMX007_2_T4: get_space_latest_sequence/2 delegates to adapter" do
+      # This test will be enabled when adapters implement space support (Phase 3-4)
+      table_name = :"test_events_rmx007_t4_#{:erlang.unique_integer([:positive])}"
+      {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
+
+      # Empty space should return 0
+      {:ok, seq} = EventStore.get_space_latest_sequence(store, 1)
+      assert seq == 0
+
+      # Append events to space 1
+      {:ok, _id1, _seq1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
+      {:ok, _id2, _seq2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{})
+
+      # Should return latest space sequence for space 1
+      {:ok, latest} = EventStore.get_space_latest_sequence(store, 1)
+      assert latest == 2
+
+      # Space 2 should still be 0
+      {:ok, seq2} = EventStore.get_space_latest_sequence(store, 2)
+      assert seq2 == 0
     end
   end
 end
