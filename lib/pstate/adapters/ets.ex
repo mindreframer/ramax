@@ -1,17 +1,19 @@
 defmodule PState.Adapters.ETS do
   @moduledoc """
-  ETS-based storage adapter for PState.
+  ETS-based storage adapter for PState with space support.
 
   This adapter uses Erlang's ETS (Erlang Term Storage) for in-memory
-  key-value storage. It's suitable for development, testing, and single-node
-  applications where persistence is not required.
+  key-value storage with space isolation. It's suitable for development,
+  testing, and single-node applications where persistence is not required.
 
   ## Features
 
   - Fast in-memory storage
+  - Space-scoped data isolation
   - Read concurrency enabled
   - Public table access
   - Automatic cleanup on process termination
+  - Composite key (space_id, key)
 
   ## Options
 
@@ -22,10 +24,10 @@ defmodule PState.Adapters.ETS do
       iex> {:ok, state} = PState.Adapters.ETS.init(table_name: :my_table)
       {:ok, %{table: #Reference<...>}}
 
-      iex> PState.Adapters.ETS.put(state, "key", "value")
+      iex> PState.Adapters.ETS.put(state, 1, "key", "value")
       :ok
 
-      iex> PState.Adapters.ETS.get(state, "key")
+      iex> PState.Adapters.ETS.get(state, 1, "key")
       {:ok, "value"}
   """
 
@@ -49,9 +51,11 @@ defmodule PState.Adapters.ETS do
   end
 
   @impl true
-  def get(state, key) do
-    case :ets.lookup(state.table, key) do
-      [{^key, value}] -> {:ok, value}
+  def get(state, space_id, key) do
+    composite_key = {space_id, key}
+
+    case :ets.lookup(state.table, composite_key) do
+      [{^composite_key, value}] -> {:ok, value}
       [] -> {:ok, nil}
     end
   rescue
@@ -59,25 +63,28 @@ defmodule PState.Adapters.ETS do
   end
 
   @impl true
-  def put(state, key, value) do
-    true = :ets.insert(state.table, {key, value})
+  def put(state, space_id, key, value) do
+    composite_key = {space_id, key}
+    true = :ets.insert(state.table, {composite_key, value})
     :ok
   rescue
     error -> {:error, error}
   end
 
   @impl true
-  def delete(state, key) do
-    true = :ets.delete(state.table, key)
+  def delete(state, space_id, key) do
+    composite_key = {space_id, key}
+    true = :ets.delete(state.table, composite_key)
     :ok
   rescue
     error -> {:error, error}
   end
 
   @impl true
-  def scan(state, prefix, _opts) do
-    # Use match to get all entries
-    matches = :ets.match(state.table, {:"$1", :"$2"})
+  def scan(state, space_id, prefix, _opts) do
+    # Match on composite keys for the given space_id
+    # Pattern: {{space_id, key}, value}
+    matches = :ets.match(state.table, {{space_id, :"$1"}, :"$2"})
 
     results =
       matches
@@ -94,12 +101,14 @@ defmodule PState.Adapters.ETS do
   end
 
   @impl true
-  def multi_get(state, keys) when is_list(keys) do
+  def multi_get(state, space_id, keys) when is_list(keys) do
     results =
       keys
       |> Enum.reduce(%{}, fn key, acc ->
-        case :ets.lookup(state.table, key) do
-          [{^key, value}] -> Map.put(acc, key, value)
+        composite_key = {space_id, key}
+
+        case :ets.lookup(state.table, composite_key) do
+          [{^composite_key, value}] -> Map.put(acc, key, value)
           [] -> acc
         end
       end)
@@ -110,9 +119,15 @@ defmodule PState.Adapters.ETS do
   end
 
   @impl true
-  def multi_put(state, entries) when is_list(entries) do
+  def multi_put(state, space_id, entries) when is_list(entries) do
+    # Convert entries to use composite keys
+    composite_entries =
+      Enum.map(entries, fn {key, value} ->
+        {{space_id, key}, value}
+      end)
+
     # ETS insert can handle a list of tuples efficiently
-    true = :ets.insert(state.table, entries)
+    true = :ets.insert(state.table, composite_entries)
     :ok
   rescue
     error -> {:error, error}

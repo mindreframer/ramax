@@ -29,16 +29,16 @@ defmodule PState.Adapters.ETSTest do
     test "T2: get/2 returns {:ok, nil} for missing key" do
       {:ok, state} = ETS.init([])
 
-      assert {:ok, nil} = ETS.get(state, 1, "nonexistent_key")
-      assert {:ok, nil} = ETS.get(state, 1, "base_card:uuid")
+      assert {:ok, nil} = ETS.get(state, "nonexistent_key")
+      assert {:ok, nil} = ETS.get(state, "base_card:uuid")
     end
 
     # RMX001_2A_T3: Test ETS put stores value
     test "T3: put/3 stores value successfully" do
       {:ok, state} = ETS.init([])
 
-      assert :ok = ETS.put(state, 1, "test_key", "test_value")
-      assert :ok = ETS.put(state, 1, "base_card:uuid", %{front: "Hello", back: "Hola"})
+      assert :ok = ETS.put(state, "test_key", "test_value")
+      assert :ok = ETS.put(state, "base_card:uuid", %{front: "Hello", back: "Hola"})
 
       # Verify values are actually in ETS
       assert [{_, "test_value"}] = :ets.lookup(state.table, "test_key")
@@ -49,8 +49,8 @@ defmodule PState.Adapters.ETSTest do
       {:ok, state} = ETS.init([])
 
       # Store simple value
-      :ok = ETS.put(state, 1, "simple_key", "simple_value")
-      assert {:ok, "simple_value"} = ETS.get(state, 1, "simple_key")
+      :ok = ETS.put(state, "simple_key", "simple_value")
+      assert {:ok, "simple_value"} = ETS.get(state, "simple_key")
 
       # Store complex value (map)
       card_data = %{
@@ -60,8 +60,8 @@ defmodule PState.Adapters.ETSTest do
         metadata: %{pronunciation: "həˈloʊ"}
       }
 
-      :ok = ETS.put(state, 1, "base_card:550e8400", card_data)
-      assert {:ok, ^card_data} = ETS.get(state, 1, "base_card:550e8400")
+      :ok = ETS.put(state, "base_card:550e8400", card_data)
+      assert {:ok, ^card_data} = ETS.get(state, "base_card:550e8400")
     end
 
     # RMX001_2A_T5: Test ETS delete removes key
@@ -69,11 +69,11 @@ defmodule PState.Adapters.ETSTest do
       {:ok, state} = ETS.init([])
 
       # Store a value
-      :ok = ETS.put(state, 1, "to_delete", "value")
-      assert {:ok, "value"} = ETS.get(state, 1, "to_delete")
+      :ok = ETS.put(state, "to_delete", "value")
+      assert {:ok, "value"} = ETS.get(state, "to_delete")
 
       # Delete it
-      assert :ok = ETS.delete(state, 1, "to_delete")
+      assert :ok = ETS.delete(state, "to_delete")
     end
 
     # RMX001_2A_T6: Test ETS get returns nil after delete
@@ -81,21 +81,21 @@ defmodule PState.Adapters.ETSTest do
       {:ok, state} = ETS.init([])
 
       # Store and verify
-      :ok = ETS.put(state, 1, "key_to_delete", "value")
-      assert {:ok, "value"} = ETS.get(state, 1, "key_to_delete")
+      :ok = ETS.put(state, "key_to_delete", "value")
+      assert {:ok, "value"} = ETS.get(state, "key_to_delete")
 
       # Delete
-      :ok = ETS.delete(state, 1, "key_to_delete")
+      :ok = ETS.delete(state, "key_to_delete")
 
       # Verify it's gone
-      assert {:ok, nil} = ETS.get(state, 1, "key_to_delete")
+      assert {:ok, nil} = ETS.get(state, "key_to_delete")
     end
 
     test "T6b: delete/2 returns :ok even if key doesn't exist" do
       {:ok, state} = ETS.init([])
 
       # Delete non-existent key should still return :ok
-      assert :ok = ETS.delete(state, 1, "never_existed")
+      assert :ok = ETS.delete(state, "never_existed")
     end
 
     # RMX001_2A_T7: Test ETS scan with prefix filter
@@ -103,14 +103,14 @@ defmodule PState.Adapters.ETSTest do
       {:ok, state} = ETS.init([])
 
       # Store multiple entities
-      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
-      :ok = ETS.put(state, 1, "base_card:uuid2", %{front: "Goodbye"})
-      :ok = ETS.put(state, 1, "base_deck:uuid3", %{title: "Spanish 101"})
-      :ok = ETS.put(state, 1, "base_deck:uuid4", %{title: "French 101"})
-      :ok = ETS.put(state, 1, "other:uuid5", %{data: "something"})
+      :ok = ETS.put(state, "base_card:uuid1", %{front: "Hello"})
+      :ok = ETS.put(state, "base_card:uuid2", %{front: "Goodbye"})
+      :ok = ETS.put(state, "base_deck:uuid3", %{title: "Spanish 101"})
+      :ok = ETS.put(state, "base_deck:uuid4", %{title: "French 101"})
+      :ok = ETS.put(state, "other:uuid5", %{data: "something"})
 
       # Scan for base_card prefix
-      assert {:ok, card_results} = ETS.scan(state, 1, "base_card:", [])
+      assert {:ok, card_results} = ETS.scan(state, "base_card:", [])
       assert length(card_results) == 2
 
       card_keys = Enum.map(card_results, fn {key, _value} -> key end)
@@ -118,7 +118,7 @@ defmodule PState.Adapters.ETSTest do
       assert "base_card:uuid2" in card_keys
 
       # Scan for base_deck prefix
-      assert {:ok, deck_results} = ETS.scan(state, 1, "base_deck:", [])
+      assert {:ok, deck_results} = ETS.scan(state, "base_deck:", [])
       assert length(deck_results) == 2
 
       deck_keys = Enum.map(deck_results, fn {key, _value} -> key end)
@@ -136,19 +136,19 @@ defmodule PState.Adapters.ETSTest do
       {:ok, state} = ETS.init([])
 
       # Store some data
-      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
-      :ok = ETS.put(state, 1, "base_deck:uuid2", %{title: "Deck"})
+      :ok = ETS.put(state, "base_card:uuid1", %{front: "Hello"})
+      :ok = ETS.put(state, "base_deck:uuid2", %{title: "Deck"})
 
       # Scan for non-existent prefix
-      assert {:ok, []} = ETS.scan(state, 1, "nonexistent:", [])
-      assert {:ok, []} = ETS.scan(state, 1, "missing_prefix:", [])
+      assert {:ok, []} = ETS.scan(state, "nonexistent:", [])
+      assert {:ok, []} = ETS.scan(state, "missing_prefix:", [])
     end
 
     test "T8b: scan/3 on empty table returns empty list" do
       {:ok, state} = ETS.init([])
 
       # Scan empty table
-      assert {:ok, []} = ETS.scan(state, 1, "base_card:", [])
+      assert {:ok, []} = ETS.scan(state, "base_card:", [])
     end
   end
 
@@ -156,27 +156,27 @@ defmodule PState.Adapters.ETSTest do
     test "put/3 handles nil values" do
       {:ok, state} = ETS.init([])
 
-      assert :ok = ETS.put(state, 1, "nil_key", nil)
-      assert {:ok, nil} = ETS.get(state, 1, "nil_key")
+      assert :ok = ETS.put(state, "nil_key", nil)
+      assert {:ok, nil} = ETS.get(state, "nil_key")
     end
 
     test "put/3 overwrites existing values" do
       {:ok, state} = ETS.init([])
 
-      :ok = ETS.put(state, 1, "key", "value1")
-      assert {:ok, "value1"} = ETS.get(state, 1, "key")
+      :ok = ETS.put(state, "key", "value1")
+      assert {:ok, "value1"} = ETS.get(state, "key")
 
-      :ok = ETS.put(state, 1, "key", "value2")
-      assert {:ok, "value2"} = ETS.get(state, 1, "key")
+      :ok = ETS.put(state, "key", "value2")
+      assert {:ok, "value2"} = ETS.get(state, "key")
     end
 
     test "scan/3 handles special characters in prefix" do
       {:ok, state} = ETS.init([])
 
-      :ok = ETS.put(state, 1, "special:key-with-dash", "value1")
-      :ok = ETS.put(state, 1, "special:key_with_underscore", "value2")
+      :ok = ETS.put(state, "special:key-with-dash", "value1")
+      :ok = ETS.put(state, "special:key_with_underscore", "value2")
 
-      assert {:ok, results} = ETS.scan(state, 1, "special:", [])
+      assert {:ok, results} = ETS.scan(state, "special:", [])
       assert length(results) == 2
     end
 
@@ -184,23 +184,23 @@ defmodule PState.Adapters.ETSTest do
       {:ok, state} = ETS.init([])
 
       # Multiple puts
-      :ok = ETS.put(state, 1, "key1", "value1")
-      :ok = ETS.put(state, 1, "key2", "value2")
-      :ok = ETS.put(state, 1, "key3", "value3")
+      :ok = ETS.put(state, "key1", "value1")
+      :ok = ETS.put(state, "key2", "value2")
+      :ok = ETS.put(state, "key3", "value3")
 
       # Multiple gets
-      assert {:ok, "value1"} = ETS.get(state, 1, "key1")
-      assert {:ok, "value2"} = ETS.get(state, 1, "key2")
-      assert {:ok, "value3"} = ETS.get(state, 1, "key3")
+      assert {:ok, "value1"} = ETS.get(state, "key1")
+      assert {:ok, "value2"} = ETS.get(state, "key2")
+      assert {:ok, "value3"} = ETS.get(state, "key3")
 
       # Multiple deletes
-      :ok = ETS.delete(state, 1, "key1")
-      :ok = ETS.delete(state, 1, "key2")
+      :ok = ETS.delete(state, "key1")
+      :ok = ETS.delete(state, "key2")
 
       # Verify
-      assert {:ok, nil} = ETS.get(state, 1, "key1")
-      assert {:ok, nil} = ETS.get(state, 1, "key2")
-      assert {:ok, "value3"} = ETS.get(state, 1, "key3")
+      assert {:ok, nil} = ETS.get(state, "key1")
+      assert {:ok, nil} = ETS.get(state, "key2")
+      assert {:ok, "value3"} = ETS.get(state, "key3")
     end
   end
 end

@@ -1,17 +1,20 @@
 defmodule PState.Adapters.SQLite do
   @moduledoc """
-  Durable SQLite storage adapter for PState.
+  Durable SQLite storage adapter for PState with space support.
 
-  This adapter uses SQLite for persistent key-value storage. It's suitable for
-  production applications where data needs to be persisted to disk.
+  This adapter uses SQLite for persistent key-value storage with space isolation.
+  It's suitable for production applications where data needs to be persisted to disk
+  and isolated by space (namespace) for multi-tenancy.
 
   ## Features
 
   - Durable storage (single file)
+  - Space-scoped data isolation
   - WAL mode for better concurrency
   - Erlang term binary encoding/decoding
   - Prepared statements for performance
   - Updated timestamp tracking
+  - Composite primary key (space_id, key)
 
   ## Options
 
@@ -23,10 +26,10 @@ defmodule PState.Adapters.SQLite do
       iex> {:ok, state} = PState.Adapters.SQLite.init(path: "db.sqlite3")
       {:ok, %PState.Adapters.SQLite{conn: conn, table_name: "pstate_entities"}}
 
-      iex> PState.Adapters.SQLite.put(state, "key", %{data: "value"})
+      iex> PState.Adapters.SQLite.put(state, 1, "key", %{data: "value"})
       :ok
 
-      iex> PState.Adapters.SQLite.get(state, "key")
+      iex> PState.Adapters.SQLite.get(state, 1, "key")
       {:ok, %{"data" => "value"}}
   """
 
@@ -45,22 +48,24 @@ defmodule PState.Adapters.SQLite do
     :ok = Exqlite.Sqlite3.execute(conn, "PRAGMA journal_mode=WAL")
     :ok = Exqlite.Sqlite3.execute(conn, "PRAGMA busy_timeout=5000")
 
-    # Create table
+    # Create table with space_id support
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS #{table_name} (
-      key TEXT PRIMARY KEY,
+      space_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
       value BLOB NOT NULL,
-      updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+      updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (space_id, key)
     )
     """
 
     :ok = Exqlite.Sqlite3.execute(conn, create_table_sql)
 
-    # Create index on updated_at for scan operations
-    index_sql =
-      "CREATE INDEX IF NOT EXISTS idx_updated_at ON #{table_name}(updated_at)"
+    # Create index on space_id for efficient space queries
+    index_space_sql =
+      "CREATE INDEX IF NOT EXISTS idx_pstate_space ON #{table_name}(space_id)"
 
-    :ok = Exqlite.Sqlite3.execute(conn, index_sql)
+    :ok = Exqlite.Sqlite3.execute(conn, index_space_sql)
 
     state = %__MODULE__{conn: conn, table_name: table_name}
     {:ok, state}
@@ -69,12 +74,12 @@ defmodule PState.Adapters.SQLite do
   end
 
   @impl true
-  def get(%__MODULE__{conn: conn, table_name: table}, key) do
-    sql = "SELECT value FROM #{table} WHERE key = ?1"
+  def get(%__MODULE__{conn: conn, table_name: table}, space_id, key) do
+    sql = "SELECT value FROM #{table} WHERE space_id = ?1 AND key = ?2"
 
     case Exqlite.Sqlite3.prepare(conn, sql) do
       {:ok, stmt} ->
-        :ok = Exqlite.Sqlite3.bind(stmt, [key])
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id, key])
 
         result =
           case Exqlite.Sqlite3.step(conn, stmt) do
@@ -98,19 +103,19 @@ defmodule PState.Adapters.SQLite do
   end
 
   @impl true
-  def put(%__MODULE__{conn: conn, table_name: table}, key, value) do
+  def put(%__MODULE__{conn: conn, table_name: table}, space_id, key, value) do
     # Encode Erlang term to binary
     binary_value = :erlang.term_to_binary(value)
 
     sql = """
-    INSERT INTO #{table} (key, value)
-    VALUES (?1, ?2)
-    ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = strftime('%s', 'now')
+    INSERT INTO #{table} (space_id, key, value)
+    VALUES (?1, ?2, ?3)
+    ON CONFLICT(space_id, key) DO UPDATE SET value = ?3, updated_at = strftime('%s', 'now')
     """
 
     case Exqlite.Sqlite3.prepare(conn, sql) do
       {:ok, stmt} ->
-        :ok = Exqlite.Sqlite3.bind(stmt, [key, binary_value])
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id, key, binary_value])
         :done = Exqlite.Sqlite3.step(conn, stmt)
         :ok = Exqlite.Sqlite3.release(conn, stmt)
         :ok
@@ -123,12 +128,12 @@ defmodule PState.Adapters.SQLite do
   end
 
   @impl true
-  def delete(%__MODULE__{conn: conn, table_name: table}, key) do
-    sql = "DELETE FROM #{table} WHERE key = ?1"
+  def delete(%__MODULE__{conn: conn, table_name: table}, space_id, key) do
+    sql = "DELETE FROM #{table} WHERE space_id = ?1 AND key = ?2"
 
     case Exqlite.Sqlite3.prepare(conn, sql) do
       {:ok, stmt} ->
-        :ok = Exqlite.Sqlite3.bind(stmt, [key])
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id, key])
         :done = Exqlite.Sqlite3.step(conn, stmt)
         :ok = Exqlite.Sqlite3.release(conn, stmt)
         :ok
@@ -141,13 +146,13 @@ defmodule PState.Adapters.SQLite do
   end
 
   @impl true
-  def scan(%__MODULE__{conn: conn, table_name: table}, prefix, _opts) do
-    sql = "SELECT key, value FROM #{table} WHERE key LIKE ?1"
+  def scan(%__MODULE__{conn: conn, table_name: table}, space_id, prefix, _opts) do
+    sql = "SELECT key, value FROM #{table} WHERE space_id = ?1 AND key LIKE ?2"
     pattern = "#{prefix}%"
 
     case Exqlite.Sqlite3.prepare(conn, sql) do
       {:ok, stmt} ->
-        :ok = Exqlite.Sqlite3.bind(stmt, [pattern])
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id, pattern])
         results = collect_kv_rows(conn, stmt, [])
         :ok = Exqlite.Sqlite3.release(conn, stmt)
         {:ok, results}
@@ -160,16 +165,16 @@ defmodule PState.Adapters.SQLite do
   end
 
   @impl true
-  def multi_get(%__MODULE__{conn: conn, table_name: table}, keys) do
+  def multi_get(%__MODULE__{conn: conn, table_name: table}, space_id, keys) do
     if keys == [] do
       {:ok, %{}}
     else
-      placeholders = Enum.map_join(1..length(keys), ", ", &"?#{&1}")
-      sql = "SELECT key, value FROM #{table} WHERE key IN (#{placeholders})"
+      placeholders = Enum.map_join(2..(length(keys) + 1), ", ", &"?#{&1}")
+      sql = "SELECT key, value FROM #{table} WHERE space_id = ?1 AND key IN (#{placeholders})"
 
       case Exqlite.Sqlite3.prepare(conn, sql) do
         {:ok, stmt} ->
-          :ok = Exqlite.Sqlite3.bind(stmt, keys)
+          :ok = Exqlite.Sqlite3.bind(stmt, [space_id | keys])
           results = collect_kv_map(conn, stmt, %{})
           :ok = Exqlite.Sqlite3.release(conn, stmt)
           {:ok, results}
@@ -183,7 +188,7 @@ defmodule PState.Adapters.SQLite do
   end
 
   @impl true
-  def multi_put(%__MODULE__{conn: conn, table_name: table}, entries) do
+  def multi_put(%__MODULE__{conn: conn, table_name: table}, space_id, entries) do
     if entries == [] do
       :ok
     else
@@ -191,18 +196,18 @@ defmodule PState.Adapters.SQLite do
       :ok = Exqlite.Sqlite3.execute(conn, "BEGIN TRANSACTION")
 
       sql = """
-      INSERT INTO #{table} (key, value)
-      VALUES (?1, ?2)
-      ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = strftime('%s', 'now')
+      INSERT INTO #{table} (space_id, key, value)
+      VALUES (?1, ?2, ?3)
+      ON CONFLICT(space_id, key) DO UPDATE SET value = ?3, updated_at = strftime('%s', 'now')
       """
 
       try do
         {:ok, stmt} = Exqlite.Sqlite3.prepare(conn, sql)
 
         Enum.each(entries, fn {key, value} ->
-          # Encode Erlang term to binary (consistent with put/3)
+          # Encode Erlang term to binary (consistent with put/4)
           binary_value = :erlang.term_to_binary(value)
-          :ok = Exqlite.Sqlite3.bind(stmt, [key, binary_value])
+          :ok = Exqlite.Sqlite3.bind(stmt, [space_id, key, binary_value])
           :done = Exqlite.Sqlite3.step(conn, stmt)
           :ok = Exqlite.Sqlite3.reset(stmt)
         end)

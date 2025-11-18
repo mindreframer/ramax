@@ -35,7 +35,7 @@ defmodule PState.Internal do
 
       :error ->
         # Cache miss - fetch from adapter
-        case pstate.adapter.get(pstate.adapter_state, key) do
+        case pstate.adapter.get(pstate.adapter_state, pstate.space_id, key) do
           {:ok, nil} ->
             :error
 
@@ -73,7 +73,7 @@ defmodule PState.Internal do
     encoded = encode_value(value)
 
     # Write to adapter
-    :ok = pstate.adapter.put(pstate.adapter_state, key, encoded)
+    :ok = pstate.adapter.put(pstate.adapter_state, pstate.space_id, key, encoded)
 
     duration = System.monotonic_time(:microsecond) - start_time
 
@@ -101,7 +101,7 @@ defmodule PState.Internal do
   @spec delete_and_invalidate(PState.t(), String.t()) :: PState.t()
   def delete_and_invalidate(%PState{} = pstate, key) when is_binary(key) do
     # Delete from adapter
-    :ok = pstate.adapter.delete(pstate.adapter_state, key)
+    :ok = pstate.adapter.delete(pstate.adapter_state, pstate.space_id, key)
 
     # Remove from cache and invalidate ref_cache
     pstate
@@ -250,12 +250,12 @@ defmodule PState.Internal do
     encoded_entries = Enum.map(entries, fn {key, value} -> {key, encode_value(value)} end)
 
     # Use adapter's multi_put if available
-    if function_exported?(pstate.adapter, :multi_put, 2) do
-      pstate.adapter.multi_put(pstate.adapter_state, encoded_entries)
+    if function_exported?(pstate.adapter, :multi_put, 3) do
+      pstate.adapter.multi_put(pstate.adapter_state, pstate.space_id, encoded_entries)
     else
       # Fallback: individual puts
       Enum.each(encoded_entries, fn {key, value} ->
-        :ok = pstate.adapter.put(pstate.adapter_state, key, value)
+        :ok = pstate.adapter.put(pstate.adapter_state, pstate.space_id, key, value)
       end)
 
       :ok

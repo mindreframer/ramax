@@ -1,24 +1,27 @@
 defmodule PState do
   @moduledoc """
-  Lazy-loading persistent state with auto-resolving references.
+  Lazy-loading persistent state with auto-resolving references and space support.
   Works transparently with Helpers.Value for JSONPath queries.
 
   PState provides a GunDB-inspired lazy-loading state management system with
-  first-class references that resolve automatically on access.
+  first-class references that resolve automatically on access. All data is
+  scoped to a specific space (namespace) for multi-tenant isolation.
 
   ## Architecture
 
   - **Cache**: In-memory cache for entities (key → value)
   - **Ref Cache**: Cached reference resolutions
   - **Adapter**: Pluggable storage backend (ETS, SQLite, etc.)
+  - **Space**: Namespace for data isolation (multi-tenancy)
 
   ## Examples
 
       iex> pstate = PState.new("track:uuid",
+      ...>   space_id: 1,
       ...>   adapter: PState.Adapters.ETS,
       ...>   adapter_opts: [table_name: :my_pstate]
       ...> )
-      %PState{root_key: "track:uuid", ...}
+      %PState{root_key: "track:uuid", space_id: 1, ...}
 
   """
 
@@ -26,9 +29,10 @@ defmodule PState do
 
   alias PState.{Internal, Ref}
 
-  @enforce_keys [:root_key, :adapter, :adapter_state]
+  @enforce_keys [:root_key, :space_id, :adapter, :adapter_state]
   defstruct [
     :root_key,
+    :space_id,
     :adapter,
     :adapter_state,
     :schema,
@@ -38,6 +42,7 @@ defmodule PState do
 
   @type t :: %__MODULE__{
           root_key: String.t(),
+          space_id: pos_integer(),
           adapter: module(),
           adapter_state: term(),
           schema: module() | nil,
@@ -46,13 +51,14 @@ defmodule PState do
         }
 
   @doc """
-  Create a new PState instance.
+  Create a new PState instance for a specific space.
 
-  Initializes a new PState with the given root key and adapter.
+  Initializes a new PState with the given root key, space_id, and adapter.
   The adapter is initialized with the provided options.
 
   ## Options
 
+  - `:space_id` - The space ID for multi-tenant isolation (required)
   - `:adapter` - The adapter module to use (required)
   - `:adapter_opts` - Options to pass to the adapter's init/1 callback (default: [])
   - `:schema` - Optional schema module that defines entity structures (default: nil)
@@ -60,27 +66,31 @@ defmodule PState do
   ## Examples
 
       iex> PState.new("track:550e8400-e29b-41d4-a716-446655440000",
+      ...>   space_id: 1,
       ...>   adapter: PState.Adapters.ETS,
       ...>   adapter_opts: [table_name: :my_pstate]
       ...> )
-      %PState{root_key: "track:550e8400-...", ...}
+      %PState{root_key: "track:550e8400-...", space_id: 1, ...}
 
       iex> PState.new("track:550e8400-e29b-41d4-a716-446655440000",
+      ...>   space_id: 1,
       ...>   adapter: PState.Adapters.ETS,
       ...>   adapter_opts: [table_name: :my_pstate],
       ...>   schema: MyApp.ContentSchema
       ...> )
-      %PState{root_key: "track:550e8400-...", schema: MyApp.ContentSchema, ...}
+      %PState{root_key: "track:550e8400-...", space_id: 1, schema: MyApp.ContentSchema, ...}
 
   ## Errors
 
   Raises if:
+  - `:space_id` option is not provided
   - `:adapter` option is not provided
   - Adapter initialization fails
 
   """
   @spec new(String.t(), keyword()) :: t()
   def new(root_key, opts \\ []) when is_binary(root_key) do
+    space_id = Keyword.fetch!(opts, :space_id)
     adapter = Keyword.fetch!(opts, :adapter)
     adapter_opts = Keyword.get(opts, :adapter_opts, [])
     schema = Keyword.get(opts, :schema, nil)
@@ -89,6 +99,7 @@ defmodule PState do
       {:ok, adapter_state} ->
         %__MODULE__{
           root_key: root_key,
+          space_id: space_id,
           adapter: adapter,
           adapter_state: adapter_state,
           schema: schema,
@@ -464,8 +475,8 @@ defmodule PState do
 
   defp batch_fetch_and_warm_cache(pstate, keys) do
     # Use multi_get if adapter supports it
-    if function_exported?(pstate.adapter, :multi_get, 2) do
-      case pstate.adapter.multi_get(pstate.adapter_state, keys) do
+    if function_exported?(pstate.adapter, :multi_get, 3) do
+      case pstate.adapter.multi_get(pstate.adapter_state, pstate.space_id, keys) do
         {:ok, results} ->
           # Warm cache with all results
           Enum.reduce(results, pstate, fn {key, encoded_value}, acc_pstate ->
