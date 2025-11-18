@@ -60,9 +60,14 @@ defmodule EventStore.AdapterTest do
       assert {:get_space_latest_sequence, 2} in callbacks
     end
 
-    test "has exactly 9 callbacks" do
+    test "defines close/1 callback" do
       callbacks = EventStore.Adapter.behaviour_info(:callbacks)
-      assert length(callbacks) == 9
+      assert {:close, 1} in callbacks
+    end
+
+    test "has exactly 10 callbacks" do
+      callbacks = EventStore.Adapter.behaviour_info(:callbacks)
+      assert length(callbacks) == 10
     end
   end
 
