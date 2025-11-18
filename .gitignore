@@ -23,3 +23,5 @@ ramax-*.tar
 /tmp/
 
 data/
+
+@meta/

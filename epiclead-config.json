@@ -1,8 +1,8 @@
 {
     "project_cwd": ".",
-    "dev_template_path": "@epiclead/templates/epic-dev.md",
-    "judge_template_path": "@epiclead/templates/epic-judge.md",
-    "exec_path_pattern": "@pm/epics/{EPIC_ID}_exec.md",
+    "dev_template_path": "@meta/@epiclead/templates/epic-dev.md",
+    "judge_template_path": "@meta/@epiclead/templates/epic-judge.md",
+    "exec_path_pattern": "@meta/@pm/epics/{EPIC_ID}_exec.md",
     "lmstudio": {
         "max_tokens": 50,
         "model": "qwen/qwen3-4b-2507",
