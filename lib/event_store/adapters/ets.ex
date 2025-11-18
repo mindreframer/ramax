@@ -17,12 +17,15 @@ defmodule EventStore.Adapters.ETS do
 
   - **Events table**: `{event_id, event}` - ordered by event_id
   - **Entity index**: `{{entity_id, event_id}, nil}` - composite key for range scans
-  - **Sequence counter**: atomic counter for thread-safe ID generation
+  - **Space index**: `{{space_id, space_sequence, event_id}, nil}` - for space-scoped queries
+  - **Sequence counter**: atomic counter for thread-safe global ID generation
+  - **Space sequences**: `{space_id, atomic_ref}` - per-space sequence counters
 
   ## References
 
   - ADR003: Event Store Architecture Decision
   - ADR004: PState Materialization from Events
+  - ADR005: Space Support Architecture Decision
   """
 
   @behaviour EventStore.Adapter
@@ -31,6 +34,8 @@ defmodule EventStore.Adapters.ETS do
   def init(opts \\ []) do
     table_name = Keyword.get(opts, :table_name, :event_store)
     entity_index_name = :"#{table_name}_entity_idx"
+    space_index_name = :"#{table_name}_space_idx"
+    space_sequences_name = :"#{table_name}_space_seq"
 
     # Main events table: ordered by event_id
     # Use :public for cross-process access, :ordered_set for sequential scanning
@@ -47,7 +52,6 @@ defmodule EventStore.Adapters.ETS do
 
     # Entity index: {{entity_id, event_id}, nil}
     # Composite key allows efficient range scans by entity_id
-    # Note: Entity index is not a named table, so we need to delete and recreate
     entity_index =
       case :ets.whereis(entity_index_name) do
         :undefined ->
@@ -58,12 +62,38 @@ defmodule EventStore.Adapters.ETS do
           existing_index
       end
 
-    # Atomic sequence counter for thread-safe ID generation
+    # Space index: {{space_id, space_sequence, event_id}, nil}
+    # Composite key allows efficient space-scoped range scans
+    space_index =
+      case :ets.whereis(space_index_name) do
+        :undefined ->
+          :ets.new(space_index_name, [:ordered_set, :public, :named_table])
+
+        existing_index ->
+          :ets.delete_all_objects(existing_index)
+          existing_index
+      end
+
+    # Space sequences: {space_id, atomic_ref}
+    # Each space has its own atomic counter for independent sequence tracking
+    space_sequences =
+      case :ets.whereis(space_sequences_name) do
+        :undefined ->
+          :ets.new(space_sequences_name, [:set, :public, :named_table])
+
+        existing_table ->
+          :ets.delete_all_objects(existing_table)
+          existing_table
+      end
+
+    # Atomic sequence counter for thread-safe global ID generation
     sequence = :atomics.new(1, signed: false)
 
     state = %{
       events: events,
       entity_index: entity_index,
+      space_index: space_index,
+      space_sequences: space_sequences,
       sequence: sequence,
       table_name: table_name
     }
@@ -73,18 +103,17 @@ defmodule EventStore.Adapters.ETS do
 
   @impl true
   def append(state, space_id, entity_id, event_type, payload, opts \\ []) do
-    # TODO (RMX007_4A): Implement per-space sequences
-    # This is a temporary stub - full implementation in Phase RMX007_4A
-    # For now, use global sequence and hardcode space_sequence = event_id
-
-    # Atomically increment sequence to get unique event_id
+    # Atomically increment global sequence to get unique event_id
     event_id = :atomics.add_get(state.sequence, 1, 1)
+
+    # Atomically increment space-specific sequence
+    space_sequence = get_and_increment_space_sequence(state, space_id)
 
     # Build event metadata
     metadata = %{
       event_id: event_id,
       space_id: space_id,
-      space_sequence: event_id,
+      space_sequence: space_sequence,
       entity_id: entity_id,
       event_type: event_type,
       timestamp: DateTime.utc_now(),
@@ -100,7 +129,10 @@ defmodule EventStore.Adapters.ETS do
     # Store entity index entry for efficient entity queries
     :ets.insert(state.entity_index, {{entity_id, event_id}, nil})
 
-    {:ok, event_id, event_id, state}
+    # Store space index entry for efficient space-scoped queries
+    :ets.insert(state.space_index, {{space_id, space_sequence, event_id}, nil})
+
+    {:ok, event_id, space_sequence, state}
   end
 
   @impl true
@@ -223,6 +255,32 @@ defmodule EventStore.Adapters.ETS do
     {:ok, current}
   end
 
+  # Private helper to get and increment space sequence atomically
+  # Creates a new atomic counter for the space if it doesn't exist
+  # Uses :ets.insert_new for atomic creation to avoid race conditions
+  defp get_and_increment_space_sequence(state, space_id) do
+    case :ets.lookup(state.space_sequences, space_id) do
+      [{^space_id, atomic_ref}] ->
+        # Space exists, increment its atomic counter
+        :atomics.add_get(atomic_ref, 1, 1)
+
+      [] ->
+        # Space doesn't exist, try to create new atomic counter atomically
+        atomic_ref = :atomics.new(1, signed: false)
+
+        case :ets.insert_new(state.space_sequences, {space_id, atomic_ref}) do
+          true ->
+            # Successfully inserted, we're the first one, use this atomic ref
+            :atomics.add_get(atomic_ref, 1, 1)
+
+          false ->
+            # Someone else created it in the meantime, look it up again
+            [{^space_id, existing_ref}] = :ets.lookup(state.space_sequences, space_id)
+            :atomics.add_get(existing_ref, 1, 1)
+        end
+    end
+  end
+
   # Private helper to generate correlation IDs
   # Using a simple UUID v4 implementation
   defp generate_correlation_id do
@@ -251,50 +309,65 @@ defmodule EventStore.Adapters.ETS do
 
   @impl true
   def stream_space_events(state, space_id, opts \\ []) do
-    # TODO (RMX007_4A): Implement space-aware streaming
-    # This is a temporary stub - full implementation in Phase RMX007_4A
-    # For now, filter all events by space_id from metadata
-
     from_sequence = Keyword.get(opts, :from_sequence, 0)
     batch_size = Keyword.get(opts, :batch_size, 1000)
 
     Stream.resource(
-      fn -> from_sequence end,
-      fn last_seq ->
-        events =
-          :ets.tab2list(state.events)
-          |> Enum.filter(fn {event_id, event} ->
-            event_id > last_seq and event.metadata.space_id == space_id
-          end)
-          |> Enum.sort_by(fn {event_id, _event} -> event_id end)
-          |> Enum.take(batch_size)
-          |> Enum.map(fn {_event_id, event} -> event end)
+      # Initialization: return starting sequence and continuation marker
+      fn -> {from_sequence, :cont} end,
+      # Iteration: fetch next batch of events for this space
+      fn
+        {_current_seq, :halt} ->
+          {:halt, nil}
 
-        case events do
-          [] ->
-            {:halt, last_seq}
+        {current_seq, :cont} ->
+          # Match spec for space events with space_sequence > current_seq
+          # Pattern: {{space_id, space_sequence, event_id}, _}
+          match_spec = [
+            {{{space_id, :"$1", :"$2"}, :_}, [{:>, :"$1", current_seq}], [{{:"$1", :"$2"}}]}
+          ]
 
-          events ->
-            new_last_seq = List.last(events).metadata.event_id
-            {events, new_last_seq}
-        end
+          case :ets.select(state.space_index, match_spec, batch_size) do
+            {rows, continuation} when is_list(rows) and rows != [] ->
+              # Fetch actual events from main table using event_ids
+              events =
+                Enum.map(rows, fn {_space_seq, event_id} ->
+                  [{^event_id, event}] = :ets.lookup(state.events, event_id)
+                  event
+                end)
+
+              last_event = List.last(events)
+              next_seq = last_event.metadata.space_sequence
+
+              # Check if there are more results
+              case continuation do
+                :"$end_of_table" -> {events, {next_seq, :halt}}
+                _ -> {events, {next_seq, :cont}}
+              end
+
+            :"$end_of_table" ->
+              {:halt, nil}
+
+            {[], _continuation} ->
+              {:halt, nil}
+          end
       end,
-      fn _last_seq -> :ok end
+      # Cleanup: nothing to clean up
+      fn _acc -> :ok end
     )
   end
 
   @impl true
   def get_space_latest_sequence(state, space_id) do
-    # TODO (RMX007_4A): Implement per-space sequence tracking
-    # This is a temporary stub - full implementation in Phase RMX007_4A
-    # For now, find the highest event_id for this space_id
+    case :ets.lookup(state.space_sequences, space_id) do
+      [{^space_id, atomic_ref}] ->
+        # Space exists, get current value of atomic counter
+        current = :atomics.get(atomic_ref, 1)
+        {:ok, current}
 
-    latest =
-      :ets.tab2list(state.events)
-      |> Enum.filter(fn {_event_id, event} -> event.metadata.space_id == space_id end)
-      |> Enum.map(fn {_event_id, event} -> event.metadata.space_sequence end)
-      |> Enum.max(fn -> 0 end)
-
-    {:ok, latest}
+      [] ->
+        # Space doesn't exist yet, return 0
+        {:ok, 0}
+    end
   end
 end

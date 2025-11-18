@@ -372,15 +372,17 @@ defmodule EventStoreTest do
       {:ok, event_id_3, space_seq_3, _store} =
         EventStore.append(store, 2, "entity:2", "event.3", %{})
 
-      # Stub implementation: space_sequence = event_id (global)
-      # Real per-space sequences will be implemented in Phase RMX007_3A/4A
-      assert space_seq_1 == event_id_1
-      assert space_seq_2 == event_id_2
-      assert space_seq_3 == event_id_3
-      # For now, sequences are global: 1, 2, 3
+      # Global event_ids are sequential: 1, 2, 3
+      assert event_id_1 == 1
+      assert event_id_2 == 2
+      assert event_id_3 == 3
+
+      # Per-space sequences are independent
+      # Space 1: events 1, 2
       assert space_seq_1 == 1
       assert space_seq_2 == 2
-      assert space_seq_3 == 3
+      # Space 2: event 1
+      assert space_seq_3 == 1
     end
 
     @tag :skip
