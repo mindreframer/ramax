@@ -370,4 +370,179 @@ defmodule EventStore.Adapters.ETS do
         {:ok, 0}
     end
   end
+
+  # Space management helpers for ETS adapter
+  # Note: ETS doesn't persist spaces, they're created on-demand during event append
+
+  @doc """
+  Insert a new space into the in-memory registry.
+  For ETS, we create a simple in-memory representation.
+  Returns {:ok, space_id}.
+  """
+  def insert_space(state, space_name, metadata) do
+    # For ETS, we use a simple incrementing ID based on table name hash
+    # This ensures uniqueness within the same test session
+    space_id = :erlang.phash2({state.table_name, space_name})
+
+    # Store in a spaces table (create if needed)
+    spaces_table = ensure_spaces_table(state.table_name)
+    :ets.insert(spaces_table, {space_id, space_name, metadata})
+
+    {:ok, space_id}
+  end
+
+  @doc """
+  Get space by name from ETS.
+  Returns {:ok, %Ramax.Space{}} or {:error, :not_found}.
+  """
+  def get_space_by_name(state, space_name) do
+    spaces_table = ensure_spaces_table(state.table_name)
+
+    # Scan for space with matching name
+    case :ets.match(spaces_table, {:"$1", space_name, :"$2"}) do
+      [[space_id, metadata]] ->
+        space = %Ramax.Space{
+          space_id: space_id,
+          space_name: space_name,
+          metadata: metadata
+        }
+
+        {:ok, space}
+
+      [] ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Get space by ID from ETS.
+  Returns {:ok, %Ramax.Space{}} or {:error, :not_found}.
+  """
+  def get_space_by_id(state, space_id) do
+    spaces_table = ensure_spaces_table(state.table_name)
+
+    case :ets.lookup(spaces_table, space_id) do
+      [{^space_id, space_name, metadata}] ->
+        space = %Ramax.Space{
+          space_id: space_id,
+          space_name: space_name,
+          metadata: metadata
+        }
+
+        {:ok, space}
+
+      [] ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  List all spaces from ETS.
+  Returns {:ok, [%Ramax.Space{}, ...]}.
+  """
+  def list_all_spaces(state) do
+    spaces_table = ensure_spaces_table(state.table_name)
+
+    spaces =
+      :ets.tab2list(spaces_table)
+      |> Enum.map(fn {space_id, space_name, metadata} ->
+        %Ramax.Space{
+          space_id: space_id,
+          space_name: space_name,
+          metadata: metadata
+        }
+      end)
+      |> Enum.sort_by(& &1.space_id)
+
+    {:ok, spaces}
+  end
+
+  @doc """
+  Delete a space and cascade all related data in ETS.
+  """
+  def delete_space(state, space_id) do
+    # Delete all events for this space
+    :ets.match_delete(state.events, {:"$1", %{metadata: %{space_id: space_id}}})
+
+    # Delete from space index
+    :ets.match_delete(state.space_index, {{space_id, :"$1", :"$2"}, nil})
+
+    # Delete space sequence
+    :ets.delete(state.space_sequences, space_id)
+
+    # Delete from spaces table
+    spaces_table = ensure_spaces_table(state.table_name)
+    :ets.delete(spaces_table, space_id)
+
+    :ok
+  end
+
+  # Projection checkpoint management for ETS
+
+  @doc """
+  Get the projection checkpoint for a space from ETS.
+  Returns {:ok, space_sequence} or {:error, :not_found}.
+  """
+  def get_projection_checkpoint(state, space_id) do
+    checkpoints_table = ensure_checkpoints_table(state.table_name)
+
+    case :ets.lookup(checkpoints_table, space_id) do
+      [{^space_id, _event_id, space_sequence, _updated_at}] ->
+        {:ok, space_sequence}
+
+      [] ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Update the projection checkpoint for a space in ETS.
+  """
+  def update_projection_checkpoint(state, space_id, space_sequence) do
+    checkpoints_table = ensure_checkpoints_table(state.table_name)
+
+    # Find the event_id for this space_sequence
+    event_id = find_event_id_for_space_sequence(state, space_id, space_sequence)
+
+    timestamp = :os.system_time(:second)
+    :ets.insert(checkpoints_table, {space_id, event_id, space_sequence, timestamp})
+
+    :ok
+  end
+
+  # Private helpers
+
+  defp ensure_spaces_table(base_table_name) do
+    table_name = :"#{base_table_name}_spaces"
+
+    case :ets.whereis(table_name) do
+      :undefined ->
+        :ets.new(table_name, [:set, :public, :named_table])
+
+      existing_table ->
+        existing_table
+    end
+  end
+
+  defp ensure_checkpoints_table(base_table_name) do
+    table_name = :"#{base_table_name}_checkpoints"
+
+    case :ets.whereis(table_name) do
+      :undefined ->
+        :ets.new(table_name, [:set, :public, :named_table])
+
+      existing_table ->
+        existing_table
+    end
+  end
+
+  defp find_event_id_for_space_sequence(state, space_id, space_sequence) do
+    # Find event with matching space_id and space_sequence
+    pattern = {:"$1", %{metadata: %{space_id: space_id, space_sequence: space_sequence}}}
+
+    case :ets.match(state.events, pattern) do
+      [[event_id]] -> event_id
+      [] -> 0
+    end
+  end
 end

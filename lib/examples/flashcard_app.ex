@@ -75,6 +75,7 @@ defmodule FlashcardApp do
 
   All options are passed through to `ContentStore.new/1`:
 
+  - `:space_name` - Space name (required, e.g., "flashcard_dev")
   - `:event_adapter` - EventStore adapter module (default: `EventStore.Adapters.ETS`)
   - `:event_opts` - Options for EventStore adapter (default: `[]`)
   - `:pstate_adapter` - PState adapter module (default: `PState.Adapters.ETS`)
@@ -85,10 +86,11 @@ defmodule FlashcardApp do
   ## Examples
 
       # In-memory app for development/testing
-      app = FlashcardApp.new()
+      app = FlashcardApp.new(space_name: "dev")
 
       # Custom configuration
       app = FlashcardApp.new(
+        space_name: "production",
         event_adapter: EventStore.Adapters.SQLite,
         event_opts: [database: "flashcards.db"],
         pstate_adapter: PState.Adapters.ETS
@@ -100,10 +102,11 @@ defmodule FlashcardApp do
     # Add flashcard-specific configuration to opts
     opts =
       opts
+      |> Keyword.put_new(:space_name, "flashcard_default")
       |> Keyword.put_new(:event_applicator, FlashcardEventApplicator)
       |> Keyword.put_new(:entity_id_extractor, &FlashcardEntityId.extract/1)
 
-    store = ContentStore.new(opts)
+    {:ok, store} = ContentStore.new(opts)
     %__MODULE__{store: store}
   end
 

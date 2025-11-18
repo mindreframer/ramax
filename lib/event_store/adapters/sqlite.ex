@@ -109,6 +109,16 @@ defmodule EventStore.Adapters.SQLite do
         )
         """)
 
+        # Create projection_checkpoints table for tracking projection progress per space
+        Exqlite.Sqlite3.execute(db, """
+        CREATE TABLE IF NOT EXISTS projection_checkpoints (
+          space_id INTEGER PRIMARY KEY,
+          last_event_id INTEGER NOT NULL,
+          last_space_sequence INTEGER NOT NULL,
+          updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+        )
+        """)
+
         {:ok, %{db: db}}
 
       {:error, reason} ->
@@ -595,8 +605,8 @@ defmodule EventStore.Adapters.SQLite do
   - Space record
   - Space sequence
   - All events in this space
-  - All PState data in this space (will be added in Phase 5)
-  - Projection checkpoints (will be added in Phase 6)
+  - All PState data in this space (managed by PState adapter)
+  - Projection checkpoints
   """
   def delete_space(state, space_id) do
     # Use a transaction for atomic deletion
@@ -607,6 +617,11 @@ defmodule EventStore.Adapters.SQLite do
 
         # Delete space sequences
         delete_query(state.db, "DELETE FROM space_sequences WHERE space_id = ?1", [space_id])
+
+        # Delete projection checkpoints
+        delete_query(state.db, "DELETE FROM projection_checkpoints WHERE space_id = ?1", [
+          space_id
+        ])
 
         # Delete the space itself
         delete_query(state.db, "DELETE FROM spaces WHERE space_id = ?1", [space_id])
@@ -714,6 +729,82 @@ defmodule EventStore.Adapters.SQLite do
 
         case Exqlite.Sqlite3.step(state.db, stmt) do
           {:row, [last_sequence]} -> {:ok, last_sequence}
+          :done -> {:ok, 0}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Projection checkpoint management
+
+  @doc """
+  Get the projection checkpoint for a space.
+
+  Returns {:ok, space_sequence} or {:error, :not_found}.
+  """
+  def get_projection_checkpoint(state, space_id) do
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           "SELECT last_space_sequence FROM projection_checkpoints WHERE space_id = ?1"
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
+
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          {:row, [last_space_sequence]} -> {:ok, last_space_sequence}
+          :done -> {:error, :not_found}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Update the projection checkpoint for a space.
+
+  Stores both the last_event_id and last_space_sequence.
+  """
+  def update_projection_checkpoint(state, space_id, space_sequence) do
+    # Get the event_id for this space_sequence
+    {:ok, event_id} = get_event_id_for_space_sequence(state, space_id, space_sequence)
+    timestamp = :os.system_time(:second)
+
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           """
+           INSERT OR REPLACE INTO projection_checkpoints (space_id, last_event_id, last_space_sequence, updated_at)
+           VALUES (?1, ?2, ?3, ?4)
+           """
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id, event_id, space_sequence, timestamp])
+
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          :done -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Private helper to get event_id for a given space_sequence
+  defp get_event_id_for_space_sequence(state, space_id, space_sequence) do
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           "SELECT event_id FROM events WHERE space_id = ?1 AND space_sequence = ?2"
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id, space_sequence])
+
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          {:row, [event_id]} -> {:ok, event_id}
           :done -> {:ok, 0}
           {:error, reason} -> {:error, reason}
         end

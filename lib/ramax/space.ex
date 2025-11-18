@@ -97,7 +97,7 @@ defmodule Ramax.Space do
   @spec find_by_name(EventStore.t(), String.t()) ::
           {:ok, t()} | {:error, :not_found}
   def find_by_name(%EventStore{} = event_store, space_name) when is_binary(space_name) do
-    EventStore.Adapters.SQLite.get_space_by_name(event_store.adapter_state, space_name)
+    event_store.adapter.get_space_by_name(event_store.adapter_state, space_name)
   end
 
   @doc """
@@ -111,7 +111,7 @@ defmodule Ramax.Space do
   @spec find_by_id(EventStore.t(), pos_integer()) ::
           {:ok, t()} | {:error, :not_found}
   def find_by_id(%EventStore{} = event_store, space_id) when is_integer(space_id) do
-    EventStore.Adapters.SQLite.get_space_by_id(event_store.adapter_state, space_id)
+    event_store.adapter.get_space_by_id(event_store.adapter_state, space_id)
   end
 
   @doc """
@@ -129,7 +129,7 @@ defmodule Ramax.Space do
   """
   @spec list_all(EventStore.t()) :: {:ok, [t()]}
   def list_all(%EventStore{} = event_store) do
-    EventStore.Adapters.SQLite.list_all_spaces(event_store.adapter_state)
+    event_store.adapter.list_all_spaces(event_store.adapter_state)
   end
 
   @doc """
@@ -147,12 +147,12 @@ defmodule Ramax.Space do
   """
   @spec delete(EventStore.t(), pos_integer()) :: :ok | {:error, term()}
   def delete(%EventStore{} = event_store, space_id) when is_integer(space_id) do
-    EventStore.Adapters.SQLite.delete_space(event_store.adapter_state, space_id)
+    event_store.adapter.delete_space(event_store.adapter_state, space_id)
   end
 
   # Private helper to create a new space
   defp create_space(event_store, space_name, metadata) do
-    case EventStore.Adapters.SQLite.insert_space(
+    case event_store.adapter.insert_space(
            event_store.adapter_state,
            space_name,
            metadata

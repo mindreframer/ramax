@@ -82,6 +82,7 @@ defmodule FlashcardDemo do
     {_time_init, app} =
       :timer.tc(fn ->
         FlashcardApp.new(
+          space_name: "demo",
           event_adapter: EventStore.Adapters.SQLite,
           event_opts: [database: event_db_path],
           pstate_adapter: PState.Adapters.SQLite,
@@ -89,6 +90,7 @@ defmodule FlashcardDemo do
         )
       end)
 
+    # FlashcardApp.new() doesn't return a tuple anymore
     app
   end
 

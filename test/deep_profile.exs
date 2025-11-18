@@ -85,7 +85,7 @@ IO.puts("========================================\n")
 Enum.each([10, 50, 100, 200], fn card_count ->
   IO.puts("Testing with #{card_count} cards...")
 
-  app = FlashcardApp.new()
+  app = FlashcardApp.new(space_name: "profile_test")
   {:ok, app} = FlashcardApp.create_deck(app, "deck-1", "Test")
 
   app =

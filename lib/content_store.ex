@@ -1,23 +1,29 @@
 defmodule ContentStore do
   @moduledoc """
-  Main API coordinating EventStore and PState.
+  Main API coordinating EventStore and PState with Space (namespace) support.
 
   ContentStore is the orchestration layer that brings together immutable events
-  from the EventStore and the mutable projection in PState. It implements the
-  core event sourcing workflow:
+  from the EventStore and the mutable projection in PState. Each ContentStore
+  instance operates within a specific Space, providing complete isolation for
+  multi-tenancy and environment separation.
+
+  Core workflows:
 
   1. **Command Execution**: Validate → Generate Events → Append → Apply
-  2. **PState Rebuild**: Replay all events from scratch
-  3. **Incremental Catchup**: Apply only new events
+  2. **PState Rebuild**: Replay space-scoped events from scratch
+  3. **Incremental Catchup**: Apply new events from space sequence
+  4. **Checkpoint Tracking**: Track projection progress per space
 
   ## Architecture
 
   ```
   ┌─────────────────────────────────────────────────────────┐
-  │ ContentStore (Orchestration Layer)                     │
-  │ - execute/3: Command → Events → PState                 │
-  │ - rebuild_pstate/2: Replay all events                  │
-  │ - catchup_pstate/2: Apply new events incrementally     │
+  │ ContentStore (Space-Scoped Orchestration)              │
+  │ - space: Ramax.Space.t()                               │
+  │ - execute/3: Command → Events (in space)               │
+  │ - rebuild_pstate/2: Replay space events only           │
+  │ - catchup_pstate/2: Apply new space events             │
+  │ - get/update_checkpoint: Track space progress          │
   └─────────────────────────────────────────────────────────┘
                         │
           ┌─────────────┴─────────────┐
@@ -25,7 +31,7 @@ defmodule ContentStore do
   ┌──────────────────┐          ┌──────────────────┐
   │ EventStore       │          │ PState           │
   │ (Immutable)      │          │ (Mutable View)   │
-  │                  │          │                  │
+  │ space_id filter  │          │ space_id key     │
   │ events.db        │          │ pstate.db        │
   └──────────────────┘          └──────────────────┘
           │                           ▲
@@ -38,10 +44,37 @@ defmodule ContentStore do
                   └────────────────┘
   ```
 
-  ## Usage
+  ## Multi-Tenancy Usage
 
-      # Initialize ContentStore
-      store = ContentStore.new(
+      # Customer A
+      {:ok, acme_store} = ContentStore.new(
+        space_name: "crm_acme",
+        event_adapter: EventStore.Adapters.SQLite,
+        event_opts: [database: "app.db"]
+      )
+
+      # Customer B (same database!)
+      {:ok, widgets_store} = ContentStore.new(
+        space_name: "crm_widgets",
+        event_adapter: EventStore.Adapters.SQLite,
+        event_opts: [database: "app.db"]
+      )
+
+      # Add contact to ACME (isolated)
+      {:ok, [_], acme_store} = ContentStore.execute(
+        acme_store,
+        &CRM.Commands.add_contact/2,
+        %{contact_id: "c1", name: "John"}
+      )
+
+      # Rebuild only ACME's projection (not Widgets!)
+      acme_store = ContentStore.rebuild_pstate(acme_store)
+
+  ## Basic Usage
+
+      # Initialize ContentStore for a space
+      {:ok, store} = ContentStore.new(
+        space_name: "dev",
         event_adapter: EventStore.Adapters.ETS,
         pstate_adapter: PState.Adapters.ETS,
         root_key: "content:root"
@@ -58,21 +91,24 @@ defmodule ContentStore do
       # Query PState
       {:ok, deck} = PState.fetch(store.pstate, "deck:spanish-101")
 
-      # Rebuild PState from all events
+      # Rebuild PState from space events only
       store = ContentStore.rebuild_pstate(store)
 
-      # Catchup PState with new events
-      {:ok, store, count} = ContentStore.catchup_pstate(store, from_sequence: 1000)
+      # Catchup PState with new space events
+      {:ok, store, count} = ContentStore.catchup_pstate(store, 1000)
 
   ## References
 
   - ADR004: PState Materialization from Events
+  - ADR005: Space Support Architecture Decision
   - RMX006: Event Application to PState Epic
+  - RMX007: Space Support for Multi-Tenancy Epic
   """
 
-  defstruct [:event_store, :pstate, :config]
+  defstruct [:space, :event_store, :pstate, :config]
 
   @type t :: %__MODULE__{
+          space: Ramax.Space.t(),
           event_store: EventStore.t(),
           pstate: PState.t(),
           config: map()
@@ -86,34 +122,40 @@ defmodule ContentStore do
 
   ## Options
 
+  - `:space_name` - Space name (required, e.g., "crm_acme")
   - `:event_adapter` - EventStore adapter module (default: `EventStore.Adapters.ETS`)
   - `:event_opts` - Options to pass to EventStore adapter (default: `[]`)
   - `:pstate_adapter` - PState adapter module (default: `PState.Adapters.ETS`)
   - `:pstate_opts` - Options to pass to PState adapter (default: `[]`)
-  - `:space_id` - Space ID for PState multi-tenancy (default: `1`)
   - `:root_key` - Root key for PState (default: `"content:root"`)
   - `:schema` - PState schema (optional)
   - `:event_applicator` - Module implementing event application logic (optional)
   - `:entity_id_extractor` - Function to extract entity ID from event payload (optional)
     - Receives event payload and returns entity ID string
     - Default: Returns root_key for all events
+  - `:create_space_if_missing` - Auto-create space (default: true)
 
   ## Examples
 
       # In-memory store for development/testing
-      store = ContentStore.new()
+      {:ok, store} = ContentStore.new(space_name: "dev")
 
       # Custom adapters and options
-      store = ContentStore.new(
+      {:ok, store} = ContentStore.new(
+        space_name: "crm_acme",
         event_adapter: EventStore.Adapters.SQLite,
         event_opts: [database: "events.db"],
-        pstate_adapter: PState.Adapters.ETS,
+        pstate_adapter: PState.Adapters.SQLite,
+        pstate_opts: [path: "pstate.db"],
         root_key: "content:root"
       )
 
   """
-  @spec new(keyword()) :: t()
+  @spec new(keyword()) :: {:ok, t()} | {:error, term()}
   def new(opts \\ []) do
+    # Require space_name
+    space_name = Keyword.fetch!(opts, :space_name)
+
     # Store config for rebuild
     root_key = Keyword.get(opts, :root_key, "content:root")
 
@@ -122,35 +164,44 @@ defmodule ContentStore do
       event_opts: Keyword.get(opts, :event_opts, []),
       pstate_adapter: Keyword.get(opts, :pstate_adapter, PState.Adapters.ETS),
       pstate_opts: Keyword.get(opts, :pstate_opts, []),
-      space_id: Keyword.get(opts, :space_id, 1),
       root_key: root_key,
       schema: Keyword.get(opts, :schema),
       event_applicator: Keyword.get(opts, :event_applicator),
       entity_id_extractor: Keyword.get(opts, :entity_id_extractor, fn _payload -> root_key end)
     }
 
-    # Initialize event store
+    # Initialize event store (shared across spaces)
     {:ok, event_store} =
       EventStore.new(
         config.event_adapter,
         config.event_opts
       )
 
-    # Initialize PState
-    pstate =
-      PState.new(
-        config.root_key,
-        space_id: config.space_id,
-        adapter: config.pstate_adapter,
-        adapter_opts: config.pstate_opts,
-        schema: config.schema
-      )
+    # Get or create space
+    case Ramax.Space.get_or_create(event_store, space_name) do
+      {:ok, space, updated_event_store} ->
+        # Initialize PState with space_id from space
+        pstate =
+          PState.new(
+            config.root_key,
+            space_id: space.space_id,
+            adapter: config.pstate_adapter,
+            adapter_opts: config.pstate_opts,
+            schema: config.schema
+          )
 
-    %__MODULE__{
-      event_store: event_store,
-      pstate: pstate,
-      config: config
-    }
+        store = %__MODULE__{
+          space: space,
+          event_store: updated_event_store,
+          pstate: pstate,
+          config: config
+        }
+
+        {:ok, store}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc """
@@ -199,10 +250,11 @@ defmodule ContentStore do
     # 1. Run command to generate events
     case command_fn.(store.pstate, params) do
       {:ok, event_specs} ->
-        # 2. Append events to event store
+        # 2. Append events to event store (scoped to this space)
         {event_ids, updated_event_store} =
           append_events(
             store.event_store,
+            store.space.space_id,
             event_specs,
             params,
             store.config.entity_id_extractor
@@ -265,21 +317,25 @@ defmodule ContentStore do
   def rebuild_pstate(store, opts \\ []) do
     batch_size = Keyword.get(opts, :batch_size, 1000)
 
-    IO.puts("Rebuilding PState from event store...")
+    IO.puts(
+      "Rebuilding PState for space '#{store.space.space_name}' (ID: #{store.space.space_id})..."
+    )
 
-    # Create fresh PState using stored config
+    # Create fresh PState using stored config with space_id from space
     fresh_pstate =
       PState.new(
         store.config.root_key,
-        space_id: store.config.space_id,
+        space_id: store.space.space_id,
         adapter: store.config.pstate_adapter,
         adapter_opts: store.config.pstate_opts,
         schema: store.config.schema
       )
 
-    # Stream and apply all events
+    # Stream and apply only events from this space
     rebuilt_pstate =
-      EventStore.stream_all_events(store.event_store, batch_size: batch_size)
+      EventStore.stream_space_events(store.event_store, store.space.space_id,
+        batch_size: batch_size
+      )
       |> Stream.chunk_every(batch_size)
       |> Enum.reduce(fresh_pstate, fn batch, ps ->
         IO.write(".")
@@ -291,16 +347,16 @@ defmodule ContentStore do
         end
       end)
 
-    IO.puts("✓ Rebuild complete!")
+    IO.puts("✓ Rebuild complete for space '#{store.space.space_name}'!")
 
     %{store | pstate: rebuilt_pstate}
   end
 
   @doc """
-  Catch up PState with new events since a sequence.
+  Catch up PState with new events since a space sequence.
 
-  Applies only events that occurred after the specified sequence number.
-  This is useful for:
+  Applies only events from this space that occurred after the specified
+  space sequence number. This is useful for:
 
   - Incremental updates after downtime
   - Syncing read models
@@ -309,7 +365,7 @@ defmodule ContentStore do
   ## Parameters
 
   - `store` - Current ContentStore instance
-  - `from_sequence` - Only apply events with event_id > this value
+  - `from_space_sequence` - Only apply events with space_sequence > this value
 
   ## Returns
 
@@ -318,24 +374,27 @@ defmodule ContentStore do
 
   ## Examples
 
-      # Catchup from sequence 1000
+      # Catchup from space sequence 1000
       {:ok, updated_store, events_count} = ContentStore.catchup_pstate(store, 1000)
-      IO.puts("Applied events")
+      IO.puts("Applied \#{events_count} events")
 
       # Already up-to-date
-      {:ok, latest_seq} = EventStore.get_latest_sequence(store.event_store)
+      {:ok, latest_seq} = ContentStore.get_checkpoint(store)
       {:ok, same_store, 0} = ContentStore.catchup_pstate(store, latest_seq)
 
   """
   @spec catchup_pstate(t(), non_neg_integer()) :: {:ok, t(), non_neg_integer()}
-  def catchup_pstate(store, from_sequence) do
-    {:ok, latest_seq} = EventStore.get_latest_sequence(store.event_store)
+  def catchup_pstate(store, from_space_sequence) do
+    {:ok, latest_seq} =
+      EventStore.get_space_latest_sequence(store.event_store, store.space.space_id)
 
-    if from_sequence >= latest_seq do
+    if from_space_sequence >= latest_seq do
       {:ok, store, 0}
     else
       {updated_pstate, count} =
-        EventStore.stream_all_events(store.event_store, from_sequence: from_sequence)
+        EventStore.stream_space_events(store.event_store, store.space.space_id,
+          from_sequence: from_space_sequence
+        )
         |> Enum.reduce({store.pstate, 0}, fn event, {ps, c} ->
           updated_ps =
             if store.config.event_applicator do
@@ -351,19 +410,59 @@ defmodule ContentStore do
     end
   end
 
+  @doc """
+  Get projection checkpoint for this space.
+
+  Returns the last space_sequence that was processed for this space.
+  Useful for tracking incremental catchup progress.
+
+  ## Examples
+
+      {:ok, checkpoint} = ContentStore.get_checkpoint(store)
+      # checkpoint is the last space_sequence processed
+  """
+  @spec get_checkpoint(t()) :: {:ok, non_neg_integer()}
+  def get_checkpoint(store) do
+    # Delegate to adapter helper
+    case store.event_store.adapter.get_projection_checkpoint(
+           store.event_store.adapter_state,
+           store.space.space_id
+         ) do
+      {:ok, checkpoint} -> {:ok, checkpoint}
+      {:error, :not_found} -> {:ok, 0}
+    end
+  end
+
+  @doc """
+  Update projection checkpoint for this space.
+
+  Stores the last space_sequence that was processed. This allows
+  resuming catchup from where it left off.
+
+  ## Examples
+
+      :ok = ContentStore.update_checkpoint(store, 1500)
+  """
+  @spec update_checkpoint(t(), non_neg_integer()) :: :ok
+  def update_checkpoint(store, space_sequence) do
+    # Delegate to adapter helper
+    store.event_store.adapter.update_projection_checkpoint(
+      store.event_store.adapter_state,
+      store.space.space_id,
+      space_sequence
+    )
+  end
+
   # Private Helpers
 
-  defp append_events(event_store, event_specs, params, entity_id_extractor) do
+  defp append_events(event_store, space_id, event_specs, params, entity_id_extractor) do
     Enum.reduce(event_specs, {[], event_store}, fn {event_type, payload}, {ids, es} ->
       entity_id = entity_id_extractor.(payload)
 
-      # TODO (RMX007_6A): Replace hardcoded space_id with store.space.space_id
-      # This temporary default space_id will be replaced in Phase 6
-      # when ContentStore gets proper space support
       {:ok, event_id, _space_sequence, new_es} =
         EventStore.append(
           es,
-          1,
+          space_id,
           entity_id,
           event_type,
           payload,

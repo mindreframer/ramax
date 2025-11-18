@@ -7,7 +7,7 @@ IO.puts("========================================\n")
 
 # Setup with 200 cards (enough to show the problem)
 IO.puts("Setting up test with 200 cards...")
-app = FlashcardApp.new()
+app = FlashcardApp.new(space_name: "profile_test")
 {:ok, app} = FlashcardApp.create_deck(app, "deck-1", "Test")
 
 app =

@@ -10,6 +10,7 @@ defmodule FlashcardAppTest do
 
     app =
       FlashcardApp.new(
+        space_name: "test_#{unique_id}",
         event_opts: [table_name: :"event_store_#{unique_id}"],
         pstate_opts: [table_name: :"pstate_#{unique_id}"]
       )
@@ -23,6 +24,7 @@ defmodule FlashcardAppTest do
 
     app =
       FlashcardApp.new(
+        space_name: "test_#{unique_id}",
         event_opts: [table_name: :"event_store_#{unique_id}"],
         pstate_opts: [table_name: :"pstate_#{unique_id}"]
       )
@@ -369,6 +371,7 @@ defmodule FlashcardAppTest do
 
     app =
       FlashcardApp.new(
+        space_name: "test_#{unique_id}",
         event_opts: [table_name: :"event_store_#{unique_id}"],
         pstate_opts: [table_name: :"pstate_#{unique_id}"]
       )
