@@ -112,6 +112,34 @@ defmodule PState do
     end
   end
 
+  @doc """
+  Clear all data for a specific space.
+
+  This is useful when rebuilding PState from events, where you want to
+  clear only the data for a specific space while preserving data from
+  other spaces in a shared table.
+
+  Returns the PState struct with cleared cache.
+
+  ## Examples
+
+      iex> PState.clear_space(pstate)
+      %PState{cache: %{}, ref_cache: %{}, ...}
+  """
+  @spec clear_space(t()) :: t()
+  def clear_space(pstate) do
+    # Scan all keys for this space
+    {:ok, entries} = pstate.adapter.scan(pstate.adapter_state, pstate.space_id, "", [])
+
+    # Delete each key
+    Enum.each(entries, fn {key, _value} ->
+      pstate.adapter.delete(pstate.adapter_state, pstate.space_id, key)
+    end)
+
+    # Return pstate with cleared caches
+    %{pstate | cache: %{}, ref_cache: %{}}
+  end
+
   # Access behavior implementation
 
   @doc """

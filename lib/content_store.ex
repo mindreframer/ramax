@@ -322,6 +322,7 @@ defmodule ContentStore do
     )
 
     # Create fresh PState using stored config with space_id from space
+    # This will reuse the adapter table if it already exists (for shared tables)
     fresh_pstate =
       PState.new(
         store.config.root_key,
@@ -330,6 +331,9 @@ defmodule ContentStore do
         adapter_opts: store.config.pstate_opts,
         schema: store.config.schema
       )
+
+    # Clear only this space's data from the (potentially shared) table
+    fresh_pstate = PState.clear_space(fresh_pstate)
 
     # Stream and apply only events from this space
     rebuilt_pstate =

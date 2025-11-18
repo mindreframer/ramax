@@ -9,7 +9,7 @@ defmodule AccessTest do
     pstate =
       PState.new("test:root",
         adapter: PState.Adapters.ETS,
-        space_id: 1,
+          space_id: 1,
         adapter_opts: [table_name: :"test_access_#{System.unique_integer([:positive])}"]
       )
 

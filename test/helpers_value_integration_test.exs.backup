@@ -8,10 +8,7 @@ defmodule HelpersValueIntegrationTest do
   setup do
     # Create a new PState instance for each test
     pstate =
-      PState.new("test_root:#{:erlang.unique_integer([:positive])}",
-        space_id: 1,
-        adapter: PState.Adapters.ETS
-      )
+      PState.new("test_root:#{:erlang.unique_integer([:positive])}", adapter: PState.Adapters.ETS)
 
     {:ok, pstate: pstate}
   end

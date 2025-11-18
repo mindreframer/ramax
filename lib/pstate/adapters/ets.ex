@@ -37,13 +37,23 @@ defmodule PState.Adapters.ETS do
   def init(opts) do
     table_name = Keyword.get(opts, :table_name, :pstate_ets)
 
-    # Create ETS table with read concurrency for better performance
+    # Check if a named table already exists (for shared table scenarios)
+    # If it does, reuse it; otherwise create a new one
     table =
-      :ets.new(table_name, [
-        :set,
-        :public,
-        {:read_concurrency, true}
-      ])
+      case :ets.whereis(table_name) do
+        :undefined ->
+          # Create new ETS table with :named_table for sharing across spaces
+          :ets.new(table_name, [
+            :set,
+            :public,
+            :named_table,
+            {:read_concurrency, true}
+          ])
+
+        existing_table ->
+          # Reuse existing named table
+          existing_table
+      end
 
     {:ok, %{table: table}}
   rescue

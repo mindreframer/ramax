@@ -39,14 +39,14 @@ defmodule EventStore.Adapters.ETS do
 
     # Main events table: ordered by event_id
     # Use :public for cross-process access, :ordered_set for sequential scanning
-    # Check if table already exists and clear it for idempotent initialization
+    # Check if table already exists and reuse it (for shared table scenarios)
     events =
       case :ets.whereis(table_name) do
         :undefined ->
           :ets.new(table_name, [:ordered_set, :public, :named_table])
 
         existing_table ->
-          :ets.delete_all_objects(existing_table)
+          # Reuse existing table without clearing (supports multi-space sharing)
           existing_table
       end
 
@@ -58,7 +58,7 @@ defmodule EventStore.Adapters.ETS do
           :ets.new(entity_index_name, [:ordered_set, :public, :named_table])
 
         existing_index ->
-          :ets.delete_all_objects(existing_index)
+          # Reuse existing index without clearing
           existing_index
       end
 
@@ -70,7 +70,7 @@ defmodule EventStore.Adapters.ETS do
           :ets.new(space_index_name, [:ordered_set, :public, :named_table])
 
         existing_index ->
-          :ets.delete_all_objects(existing_index)
+          # Reuse existing index without clearing
           existing_index
       end
 
@@ -82,12 +82,28 @@ defmodule EventStore.Adapters.ETS do
           :ets.new(space_sequences_name, [:set, :public, :named_table])
 
         existing_table ->
-          :ets.delete_all_objects(existing_table)
+          # Reuse existing table without clearing
           existing_table
       end
 
     # Atomic sequence counter for thread-safe global ID generation
-    sequence = :atomics.new(1, signed: false)
+    # Store in a dedicated ETS table for persistence across multiple EventStore instances
+    sequence_table_name = :"#{table_name}_sequence"
+
+    sequence =
+      case :ets.whereis(sequence_table_name) do
+        :undefined ->
+          # Create new table and atomic counter
+          :ets.new(sequence_table_name, [:set, :public, :named_table])
+          atomic = :atomics.new(1, signed: false)
+          :ets.insert(sequence_table_name, {:sequence, atomic})
+          atomic
+
+        _existing ->
+          # Reuse existing atomic counter from table
+          [{:sequence, atomic}] = :ets.lookup(sequence_table_name, :sequence)
+          atomic
+      end
 
     state = %{
       events: events,

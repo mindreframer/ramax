@@ -2,18 +2,11 @@ defmodule PState.Adapters.ETSTest do
   use ExUnit.Case, async: true
   alias PState.Adapters.ETS
 
-  # Helper to create a unique table for each test
-  defp init_unique_table do
-    table_name = :"test_#{:erlang.unique_integer([:positive])}"
-    ETS.init(table_name: table_name)
-  end
-
   describe "RMX001_2A: ETS Adapter Implementation" do
     # RMX001_2A_T1: Test ETS adapter init creates table
     test "T1: init/1 creates ETS table with default name" do
       assert {:ok, state} = ETS.init([])
-      # Named tables return atoms, not references
-      assert is_atom(state.table) or is_reference(state.table)
+      assert is_reference(state.table)
 
       # Verify table exists and has correct properties
       info = :ets.info(state.table)
@@ -26,8 +19,7 @@ defmodule PState.Adapters.ETSTest do
     test "T1b: init/1 creates ETS table with custom name" do
       table_name = :"test_table_#{:rand.uniform(1000)}"
       assert {:ok, state} = ETS.init(table_name: table_name)
-      # Named tables return atoms, not references
-      assert is_atom(state.table) or is_reference(state.table)
+      assert is_reference(state.table)
 
       info = :ets.info(state.table)
       assert info != :undefined
@@ -35,7 +27,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T2: Test ETS get returns nil for missing key
     test "T2: get/2 returns {:ok, nil} for missing key" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       assert {:ok, nil} = ETS.get(state, 1, "nonexistent_key")
       assert {:ok, nil} = ETS.get(state, 1, "base_card:uuid")
@@ -43,7 +35,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T3: Test ETS put stores value successfully
     test "T3: put/3 stores value successfully" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       assert :ok = ETS.put(state, 1, "test_key", "test_value")
       assert :ok = ETS.put(state, 1, "base_card:uuid", %{front: "Hello", back: "Hola"})
@@ -54,7 +46,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T4: Test ETS get retrieves stored value
     test "T4: get/2 retrieves stored value" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Store simple value
       :ok = ETS.put(state, 1, "simple_key", "simple_value")
@@ -74,7 +66,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T5: Test ETS delete removes key
     test "T5: delete/2 removes key" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Store a value
       :ok = ETS.put(state, 1, "to_delete", "value")
@@ -86,7 +78,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T6: Test ETS get returns nil after delete
     test "T6: get/2 returns {:ok, nil} after delete" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Store and verify
       :ok = ETS.put(state, 1, "key_to_delete", "value")
@@ -100,7 +92,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "T6b: delete/2 returns :ok even if key doesn't exist" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Delete non-existent key should still return :ok
       assert :ok = ETS.delete(state, 1, "never_existed")
@@ -108,7 +100,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T7: Test ETS scan with prefix filter
     test "T7: scan/3 returns entries matching prefix" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Store multiple entities
       :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
@@ -141,7 +133,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX001_2A_T8: Test ETS scan returns empty list for no matches
     test "T8: scan/3 returns empty list when no keys match prefix" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Store some data
       :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
@@ -153,7 +145,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "T8b: scan/3 on empty table returns empty list" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Scan empty table
       assert {:ok, []} = ETS.scan(state, 1, "base_card:", [])
@@ -163,7 +155,7 @@ defmodule PState.Adapters.ETSTest do
   describe "RMX007_5A: ETS Adapter Space Support" do
     # RMX007_5_T4: Test ETS get/put/delete with space_id
     test "RMX007_5_T4: get/put/delete with space_id" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Put value in space 1
       :ok = ETS.put(state, 1, "key1", %{data: "value1"})
@@ -177,7 +169,7 @@ defmodule PState.Adapters.ETSTest do
 
     # RMX007_5_T5: Test different spaces are isolated
     test "RMX007_5_T5: different spaces are isolated" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Put same key in different spaces
       :ok = ETS.put(state, 1, "key", %{space: 1})
@@ -192,7 +184,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "composite key isolation" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Put different values with same key in different spaces
       :ok = ETS.put(state, 1, "shared_key", %{tenant: "acme"})
@@ -219,7 +211,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "scan with space_id returns only space data" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Put data in different spaces with same prefix
       :ok = ETS.put(state, 1, "card:1", %{id: 1, space: 1})
@@ -241,7 +233,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "multi_get with space_id" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Put data in different spaces
       :ok = ETS.put(state, 1, "key1", %{val: 1})
@@ -258,7 +250,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "multi_put with space_id" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Multi-put in space 1
       :ok = ETS.multi_put(state, 1, [{"key1", %{val: 1}}, {"key2", %{val: 2}}])
@@ -277,14 +269,14 @@ defmodule PState.Adapters.ETSTest do
 
   describe "RMX001_2A: Edge Cases and Error Handling" do
     test "put/3 handles nil values" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       assert :ok = ETS.put(state, 1, "nil_key", nil)
       assert {:ok, nil} = ETS.get(state, 1, "nil_key")
     end
 
     test "put/3 overwrites existing values" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       :ok = ETS.put(state, 1, "key", "value1")
       assert {:ok, "value1"} = ETS.get(state, 1, "key")
@@ -294,7 +286,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "scan/3 handles special characters in prefix" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       :ok = ETS.put(state, 1, "special:key-with-dash", "value1")
       :ok = ETS.put(state, 1, "special:key_with_underscore", "value2")
@@ -304,7 +296,7 @@ defmodule PState.Adapters.ETSTest do
     end
 
     test "multiple operations on same table" do
-      {:ok, state} = init_unique_table()
+      {:ok, state} = ETS.init([])
 
       # Multiple puts
       :ok = ETS.put(state, 1, "key1", "value1")

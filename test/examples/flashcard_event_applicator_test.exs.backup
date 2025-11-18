@@ -8,7 +8,6 @@ defmodule FlashcardEventApplicatorTest do
   defp new_pstate do
     PState.new("content:root",
       adapter: PState.Adapters.ETS,
-      space_id: 1,
       adapter_opts: [table_name: :"test_event_applicator_#{:erlang.unique_integer([:positive])}"]
     )
   end

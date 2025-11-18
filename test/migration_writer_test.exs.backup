@@ -29,7 +29,6 @@ defmodule PState.MigrationWriterTest do
     pstate =
       PState.new("root:test",
         adapter: PState.Adapters.ETS,
-        space_id: 1,
         adapter_opts: [table_name: table_name],
         schema: schema
       )
@@ -92,9 +91,9 @@ defmodule PState.MigrationWriterTest do
     Process.sleep(50)
 
     # Verify data was written
-    assert {:ok, %{data: 1}} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "key1")
-    assert {:ok, %{data: 2}} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "key2")
-    assert {:ok, %{data: 3}} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "key3")
+    assert {:ok, %{data: 1}} = pstate.adapter.get(pstate.adapter_state, "key1")
+    assert {:ok, %{data: 2}} = pstate.adapter.get(pstate.adapter_state, "key2")
+    assert {:ok, %{data: 3}} = pstate.adapter.get(pstate.adapter_state, "key3")
   end
 
   # RMX004_1A_T4: Test timer-based flush
@@ -115,7 +114,7 @@ defmodule PState.MigrationWriterTest do
 
     # Verify data was flushed
     assert {:ok, %{data: "timer_test"}} =
-             pstate.adapter.get(pstate.adapter_state, pstate.space_id, "timer_key")
+             pstate.adapter.get(pstate.adapter_state, "timer_key")
   end
 
   # RMX004_1A_T5: Test manual flush/0
@@ -128,11 +127,8 @@ defmodule PState.MigrationWriterTest do
     :ok = MigrationWriter.flush()
 
     # Verify data was written
-    assert {:ok, %{id: "m1"}} =
-             pstate.adapter.get(pstate.adapter_state, pstate.space_id, "manual1")
-
-    assert {:ok, %{id: "m2"}} =
-             pstate.adapter.get(pstate.adapter_state, pstate.space_id, "manual2")
+    assert {:ok, %{id: "m1"}} = pstate.adapter.get(pstate.adapter_state, "manual1")
+    assert {:ok, %{id: "m2"}} = pstate.adapter.get(pstate.adapter_state, "manual2")
   end
 
   # RMX004_1A_T6: Test empty queue flush (noop)
@@ -176,7 +172,7 @@ defmodule PState.MigrationWriterTest do
     Process.sleep(200)
 
     # Fetch again from adapter to verify background write succeeded
-    {:ok, raw_data} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "base_card:card1")
+    {:ok, raw_data} = pstate.adapter.get(pstate.adapter_state, "base_card:card1")
 
     # Should now have migrated format in storage
     assert raw_data[:metadata] == %{notes: "old_notes"}
