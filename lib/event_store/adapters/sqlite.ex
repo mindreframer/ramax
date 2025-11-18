@@ -103,7 +103,11 @@ defmodule EventStore.Adapters.SQLite do
   end
 
   @impl true
-  def append(state, entity_id, event_type, payload, opts \\ []) do
+  def append(state, space_id, entity_id, event_type, payload, opts \\ []) do
+    # TODO (RMX007_3A): Implement per-space sequences
+    # This is a temporary stub - full implementation in Phase RMX007_3A
+    # For now, store space_id in metadata but use global event_id as space_sequence
+
     timestamp = DateTime.to_unix(DateTime.utc_now(), :millisecond)
     causation_id = Keyword.get(opts, :causation_id)
     correlation_id = Keyword.get(opts, :correlation_id, generate_correlation_id())
@@ -132,7 +136,8 @@ defmodule EventStore.Adapters.SQLite do
         case Exqlite.Sqlite3.step(state.db, stmt) do
           :done ->
             {:ok, event_id} = Exqlite.Sqlite3.last_insert_rowid(state.db)
-            {:ok, event_id, state}
+            # Return space_sequence = event_id as temporary stub
+            {:ok, event_id, event_id, state}
 
           :busy ->
             {:error, :database_busy}
@@ -304,9 +309,13 @@ defmodule EventStore.Adapters.SQLite do
     payload = :erlang.binary_to_term(payload_bin)
     timestamp_dt = DateTime.from_unix!(timestamp, :millisecond)
 
+    # TODO (RMX007_3A): Read space_id and space_sequence from database
+    # For now, use hardcoded values until schema is updated
     %{
       metadata: %{
         event_id: event_id,
+        space_id: 1,
+        space_sequence: event_id,
         entity_id: entity_id,
         event_type: event_type,
         timestamp: timestamp_dt,
@@ -560,6 +569,68 @@ defmodule EventStore.Adapters.SQLite do
 
       {:error, _reason} ->
         Enum.reverse(acc)
+    end
+  end
+
+  @impl true
+  def stream_space_events(state, _space_id, opts \\ []) do
+    # TODO (RMX007_3A): Implement space-aware streaming with space_sequences table
+    # This is a temporary stub - full implementation in Phase RMX007_3A
+    # For now, return all events (space filtering not implemented yet)
+
+    from_sequence = Keyword.get(opts, :from_sequence, 0)
+    batch_size = Keyword.get(opts, :batch_size, 1000)
+
+    Stream.resource(
+      fn -> from_sequence end,
+      fn current_seq ->
+        case Exqlite.Sqlite3.prepare(
+               state.db,
+               """
+               SELECT event_id, entity_id, event_type, payload, timestamp, causation_id, correlation_id
+               FROM events
+               WHERE event_id > ?1
+               ORDER BY event_id ASC
+               LIMIT ?2
+               """
+             ) do
+          {:ok, stmt} ->
+            :ok = Exqlite.Sqlite3.bind(stmt, [current_seq, batch_size])
+            events = fetch_all_rows(state.db, stmt)
+
+            case events do
+              [] -> {:halt, current_seq}
+              events -> {events, List.last(events).metadata.event_id}
+            end
+
+          {:error, _reason} ->
+            {:halt, current_seq}
+        end
+      end,
+      fn _current_seq -> :ok end
+    )
+  end
+
+  @impl true
+  def get_space_latest_sequence(state, _space_id) do
+    # TODO (RMX007_3A): Implement per-space sequence tracking
+    # This is a temporary stub - full implementation in Phase RMX007_3A
+    # For now, return the global latest event_id
+
+    case Exqlite.Sqlite3.prepare(
+           state.db,
+           "SELECT MAX(event_id) FROM events"
+         ) do
+      {:ok, stmt} ->
+        case Exqlite.Sqlite3.step(state.db, stmt) do
+          {:row, [nil]} -> {:ok, 0}
+          {:row, [max_id]} -> {:ok, max_id}
+          :done -> {:ok, 0}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

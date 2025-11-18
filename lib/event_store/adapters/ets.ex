@@ -72,13 +72,19 @@ defmodule EventStore.Adapters.ETS do
   end
 
   @impl true
-  def append(state, entity_id, event_type, payload, opts \\ []) do
+  def append(state, space_id, entity_id, event_type, payload, opts \\ []) do
+    # TODO (RMX007_4A): Implement per-space sequences
+    # This is a temporary stub - full implementation in Phase RMX007_4A
+    # For now, use global sequence and hardcode space_sequence = event_id
+
     # Atomically increment sequence to get unique event_id
     event_id = :atomics.add_get(state.sequence, 1, 1)
 
     # Build event metadata
     metadata = %{
       event_id: event_id,
+      space_id: space_id,
+      space_sequence: event_id,
       entity_id: entity_id,
       event_type: event_type,
       timestamp: DateTime.utc_now(),
@@ -94,7 +100,7 @@ defmodule EventStore.Adapters.ETS do
     # Store entity index entry for efficient entity queries
     :ets.insert(state.entity_index, {{entity_id, event_id}, nil})
 
-    {:ok, event_id, state}
+    {:ok, event_id, event_id, state}
   end
 
   @impl true
@@ -242,4 +248,53 @@ defmodule EventStore.Adapters.ETS do
 
   defp to_hex(n) when n < 10, do: ?0 + n
   defp to_hex(n), do: ?a + n - 10
+
+  @impl true
+  def stream_space_events(state, space_id, opts \\ []) do
+    # TODO (RMX007_4A): Implement space-aware streaming
+    # This is a temporary stub - full implementation in Phase RMX007_4A
+    # For now, filter all events by space_id from metadata
+
+    from_sequence = Keyword.get(opts, :from_sequence, 0)
+    batch_size = Keyword.get(opts, :batch_size, 1000)
+
+    Stream.resource(
+      fn -> from_sequence end,
+      fn last_seq ->
+        events =
+          :ets.tab2list(state.events)
+          |> Enum.filter(fn {event_id, event} ->
+            event_id > last_seq and event.metadata.space_id == space_id
+          end)
+          |> Enum.sort_by(fn {event_id, _event} -> event_id end)
+          |> Enum.take(batch_size)
+          |> Enum.map(fn {_event_id, event} -> event end)
+
+        case events do
+          [] ->
+            {:halt, last_seq}
+
+          events ->
+            new_last_seq = List.last(events).metadata.event_id
+            {events, new_last_seq}
+        end
+      end,
+      fn _last_seq -> :ok end
+    )
+  end
+
+  @impl true
+  def get_space_latest_sequence(state, space_id) do
+    # TODO (RMX007_4A): Implement per-space sequence tracking
+    # This is a temporary stub - full implementation in Phase RMX007_4A
+    # For now, find the highest event_id for this space_id
+
+    latest =
+      :ets.tab2list(state.events)
+      |> Enum.filter(fn {_event_id, event} -> event.metadata.space_id == space_id end)
+      |> Enum.map(fn {_event_id, event} -> event.metadata.space_sequence end)
+      |> Enum.max(fn -> 0 end)
+
+    {:ok, latest}
+  end
 end

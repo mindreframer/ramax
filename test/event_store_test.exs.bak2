@@ -63,10 +63,9 @@ defmodule EventStoreTest do
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
       # First append
-      {:ok, event_id_1, _space_seq_1, updated_store_1} =
+      {:ok, event_id_1, updated_store_1} =
         EventStore.append(
           store,
-          1,
           "entity:123",
           "entity.created",
           %{name: "Test"}
@@ -80,10 +79,9 @@ defmodule EventStoreTest do
       assert is_map(updated_store_1.adapter_state)
 
       # Second append on updated store
-      {:ok, event_id_2, _space_seq_2, updated_store_2} =
+      {:ok, event_id_2, updated_store_2} =
         EventStore.append(
           updated_store_1,
-          1,
           "entity:123",
           "entity.updated",
           %{name: "Updated"}
@@ -102,9 +100,9 @@ defmodule EventStoreTest do
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
       # Append multiple events
-      {:ok, id1, _seq1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{data: 1})
-      {:ok, id2, _seq2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{data: 2})
-      {:ok, id3, _seq3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{data: 3})
+      {:ok, id1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{data: 1})
+      {:ok, id2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{data: 2})
+      {:ok, id3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{data: 3})
 
       # Event IDs should be sequential
       assert id1 == 1
@@ -121,15 +119,9 @@ defmodule EventStoreTest do
       # Test with ETS
       table_name = :"test_events_t6_ets_#{:erlang.unique_integer([:positive])}"
       {:ok, ets_store} = EventStore.new(ETSAdapter, table_name: table_name)
-
-      {:ok, _id1, _seq1, ets_store} =
-        EventStore.append(ets_store, 1, "entity:1", "event.1", %{value: "a"})
-
-      {:ok, _id2, _seq2, ets_store} =
-        EventStore.append(ets_store, 1, "entity:1", "event.2", %{value: "b"})
-
-      {:ok, _id3, _seq3, ets_store} =
-        EventStore.append(ets_store, 1, "entity:2", "event.3", %{value: "c"})
+      {:ok, _id1, ets_store} = EventStore.append(ets_store, "entity:1", "event.1", %{value: "a"})
+      {:ok, _id2, ets_store} = EventStore.append(ets_store, "entity:1", "event.2", %{value: "b"})
+      {:ok, _id3, ets_store} = EventStore.append(ets_store, "entity:2", "event.3", %{value: "c"})
 
       {:ok, ets_events} = EventStore.get_events(ets_store, "entity:1")
       assert length(ets_events) == 2
@@ -141,14 +133,14 @@ defmodule EventStoreTest do
 
       {:ok, sqlite_store} = EventStore.new(SQLiteAdapter, database: db_path)
 
-      {:ok, _id1, _seq1, sqlite_store} =
-        EventStore.append(sqlite_store, 1, "entity:1", "event.1", %{value: "a"})
+      {:ok, _id1, sqlite_store} =
+        EventStore.append(sqlite_store, "entity:1", "event.1", %{value: "a"})
 
-      {:ok, _id2, _seq2, sqlite_store} =
-        EventStore.append(sqlite_store, 1, "entity:1", "event.2", %{value: "b"})
+      {:ok, _id2, sqlite_store} =
+        EventStore.append(sqlite_store, "entity:1", "event.2", %{value: "b"})
 
-      {:ok, _id3, _seq3, sqlite_store} =
-        EventStore.append(sqlite_store, 1, "entity:2", "event.3", %{value: "c"})
+      {:ok, _id3, sqlite_store} =
+        EventStore.append(sqlite_store, "entity:2", "event.3", %{value: "c"})
 
       {:ok, sqlite_events} = EventStore.get_events(sqlite_store, "entity:1")
       assert length(sqlite_events) == 2
@@ -169,9 +161,9 @@ defmodule EventStoreTest do
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
       # Append some events
-      {:ok, _id1, _seq1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{value: 1})
-      {:ok, _id2, _seq2, store} = EventStore.append(store, 1, "entity:2", "event.2", %{value: 2})
-      {:ok, _id3, _seq3, store} = EventStore.append(store, 1, "entity:3", "event.3", %{value: 3})
+      {:ok, _id1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{value: 1})
+      {:ok, _id2, store} = EventStore.append(store, 1, "entity:2", "event.2", %{value: 2})
+      {:ok, _id3, store} = EventStore.append(store, 1, "entity:3", "event.3", %{value: 3})
 
       # Get stream
       stream = EventStore.stream_all_events(store, batch_size: 2)
@@ -199,9 +191,9 @@ defmodule EventStoreTest do
       assert seq == 0
 
       # Append events
-      {:ok, _id1, _seq1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
-      {:ok, _id2, _seq2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{})
-      {:ok, _id3, _seq3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{})
+      {:ok, _id1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
+      {:ok, _id2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{})
+      {:ok, _id3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{})
 
       # Should return latest sequence
       {:ok, latest} = EventStore.get_latest_sequence(store)
@@ -212,10 +204,9 @@ defmodule EventStoreTest do
       table_name = :"test_events_extra_1_#{:erlang.unique_integer([:positive])}"
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
-      {:ok, event_id, _seq, store} =
+      {:ok, event_id, store} =
         EventStore.append(
           store,
-          1,
           "entity:123",
           "entity.created",
           %{name: "Test Entity"}
@@ -237,14 +228,9 @@ defmodule EventStoreTest do
       table_name = :"test_events_extra_2_#{:erlang.unique_integer([:positive])}"
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
-      {:ok, _id1, _seq1, store} =
-        EventStore.append(store, 1, "entity:1", "event.1", %{value: "a"})
-
-      {:ok, _id2, _seq2, store} =
-        EventStore.append(store, 1, "entity:2", "event.2", %{value: "b"})
-
-      {:ok, _id3, _seq3, store} =
-        EventStore.append(store, 1, "entity:1", "event.3", %{value: "c"})
+      {:ok, _id1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{value: "a"})
+      {:ok, _id2, store} = EventStore.append(store, 1, "entity:2", "event.2", %{value: "b"})
+      {:ok, _id3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{value: "c"})
 
       # Get all events
       {:ok, all_events} = EventStore.get_all_events(store)
@@ -268,20 +254,18 @@ defmodule EventStoreTest do
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
       # First event
-      {:ok, event_id_1, _seq1, store} =
+      {:ok, event_id_1, store} =
         EventStore.append(
           store,
-          1,
           "entity:123",
           "entity.created",
           %{name: "Test"}
         )
 
       # Second event caused by first
-      {:ok, event_id_2, _seq2, store} =
+      {:ok, event_id_2, store} =
         EventStore.append(
           store,
-          1,
           "entity:123",
           "entity.updated",
           %{name: "Updated"},
@@ -305,7 +289,7 @@ defmodule EventStoreTest do
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
       before_time = DateTime.utc_now()
-      {:ok, event_id, _seq, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
+      {:ok, event_id, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
       after_time = DateTime.utc_now()
 
       {:ok, event} = EventStore.get_event(store, event_id)
@@ -322,9 +306,9 @@ defmodule EventStoreTest do
       initial_state = store.adapter_state
 
       # Multiple operations
-      {:ok, _id1, _seq1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
-      {:ok, _id2, _seq2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{})
-      {:ok, _id3, _seq3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{})
+      {:ok, _id1, store} = EventStore.append(store, 1, "entity:1", "event.1", %{})
+      {:ok, _id2, store} = EventStore.append(store, 1, "entity:1", "event.2", %{})
+      {:ok, _id3, store} = EventStore.append(store, 1, "entity:1", "event.3", %{})
 
       # State structure should remain consistent
       assert is_map(store.adapter_state)
