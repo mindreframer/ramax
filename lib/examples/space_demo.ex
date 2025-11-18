@@ -79,7 +79,8 @@ defmodule SpaceDemo do
     Logger.info("--- Demo 1: Basic Space Operations ---")
 
     # Initialize EventStore
-    {:ok, event_store} = EventStore.new(EventStore.Adapters.ETS)
+    # {:ok, event_store} = EventStore.new(EventStore.Adapters.ETS)
+    {:ok, event_store} = EventStore.new(EventStore.Adapters.SQLite, database: "events.db")
 
     # Create multiple spaces
     Logger.info("Creating spaces...")
@@ -143,14 +144,14 @@ defmodule SpaceDemo do
     {:ok, store_a} =
       ContentStore.new(
         space_name: "isolation_demo_a",
-        event_applicator: &SpaceDemo.SimpleApplicator.apply_event/2,
+        event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
 
     {:ok, store_b} =
       ContentStore.new(
         space_name: "isolation_demo_b",
-        event_applicator: &SpaceDemo.SimpleApplicator.apply_event/2,
+        event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
 
@@ -235,7 +236,7 @@ defmodule SpaceDemo do
     {:ok, small_store} =
       ContentStore.new(
         space_name: "rebuild_demo_small",
-        event_applicator: &SpaceDemo.SimpleApplicator.apply_event/2,
+        event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
 
@@ -243,7 +244,7 @@ defmodule SpaceDemo do
     {:ok, large_store} =
       ContentStore.new(
         space_name: "rebuild_demo_large",
-        event_applicator: &SpaceDemo.SimpleApplicator.apply_event/2,
+        event_applicator: SpaceDemo.SimpleApplicator,
         entity_id_extractor: &extract_entity_id/1
       )
 
@@ -335,6 +336,11 @@ defmodule SpaceDemo do
         _ ->
           pstate
       end
+    end
+
+    @spec apply_events(PState.t(), [EventStore.event()]) :: PState.t()
+    def apply_events(pstate, events) do
+      Enum.reduce(events, pstate, &apply_event(&2, &1))
     end
   end
 
