@@ -1,4 +1,4 @@
-defmodule Helpers.Result do
+defmodule RamaxUtils.Result do
   @moduledoc """
   Documentation for `MaxoResult`.
   """

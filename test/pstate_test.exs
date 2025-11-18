@@ -223,9 +223,9 @@ defmodule PStateTest do
           parent_collection: :items
         )
 
-      # Verify child ref is in custom collection (as string key due to Helpers.Value)
+      # Verify child ref is in custom collection (as string key due to RamaxUtils.Value)
       {:ok, deck} = PState.get_resolved(pstate, "base_deck:#{parent_id}", depth: :infinity)
-      # Helpers.Value.insert converts atom keys to strings
+      # RamaxUtils.Value.insert converts atom keys to strings
       assert is_map(deck["items"])
       card = deck["items"][card_id]
       assert is_map(card)

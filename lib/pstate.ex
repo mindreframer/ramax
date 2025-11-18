@@ -1,7 +1,7 @@
 defmodule PState do
   @moduledoc """
   Lazy-loading persistent state with auto-resolving references and space support.
-  Works transparently with Helpers.Value for JSONPath queries.
+  Works transparently with RamaxUtils.Value for JSONPath queries.
 
   PState provides a GunDB-inspired lazy-loading state management system with
   first-class references that resolve automatically on access. All data is
@@ -614,9 +614,9 @@ defmodule PState do
     # Write child entity
     pstate = put_in(pstate[entity_key], child_data)
 
-    # Add child ref to parent collection using Helpers.Value.insert
+    # Add child ref to parent collection using RamaxUtils.Value.insert
     # This ensures nested structure is created properly
-    alias Helpers.Value
+    alias RamaxUtils.Value
 
     parent_collection_path = "#{parent_key}.#{parent_collection}.#{entity_id}"
     Value.insert(pstate, parent_collection_path, Ref.new(entity_key))

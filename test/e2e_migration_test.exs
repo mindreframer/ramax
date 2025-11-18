@@ -4,7 +4,7 @@ defmodule PState.E2EMigrationTest do
   alias PState
   alias PState.{Ref, Internal, MigrationWriter}
   alias PState.Adapters.{ETS, SQLite}
-  alias Helpers.Value
+  alias RamaxUtils.Value
 
   @moduledoc """
   Tests for RMX004_9A: End-to-End Migration Tests
@@ -272,7 +272,7 @@ defmodule PState.E2EMigrationTest do
     end
   end
 
-  describe "RMX004_9A_T5: Helpers.Value integration" do
+  describe "RMX004_9A_T5: RamaxUtils.Value integration" do
     test "Value.get works with migrated data" do
       pstate = create_pstate_with_schema()
       writer_pid = start_migration_writer(pstate)

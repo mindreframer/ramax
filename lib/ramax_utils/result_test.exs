@@ -1,8 +1,8 @@
-defmodule Helpers.Result.Test do
+defmodule RamaxUtils.Result.Test do
   use ExUnit.Case
-  doctest Helpers.Result
+  doctest RamaxUtils.Result
 
-  import Helpers.Result
+  import RamaxUtils.Result
 
   test "is_ok_result/1" do
     check = fn
@@ -42,17 +42,17 @@ defmodule Helpers.Result.Test do
     assert nil == :ok |> unwrap!()
     assert 42 == ok(42) |> unwrap!()
 
-    assert_raise Helpers.Result.UnhandledError, fn ->
+    assert_raise RamaxUtils.Result.UnhandledError, fn ->
       err(:failed) |> unwrap!()
     end
   end
 
   test "unwrap_err!/1" do
-    assert_raise Helpers.Result.MissingError, fn ->
+    assert_raise RamaxUtils.Result.MissingError, fn ->
       :ok |> unwrap_err!()
     end
 
-    assert_raise Helpers.Result.MissingError, fn ->
+    assert_raise RamaxUtils.Result.MissingError, fn ->
       ok(42) |> unwrap_err!()
     end
 

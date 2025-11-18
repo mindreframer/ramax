@@ -1,6 +1,6 @@
-defmodule Helpers.ValueTest do
+defmodule RamaxUtils.ValueTest do
   use ExUnit.Case
-  alias Helpers.Value
+  alias RamaxUtils.Value
 
   describe "Value.get" do
     test "get required value in plain key atom map" do

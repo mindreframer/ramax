@@ -1,7 +1,7 @@
 defmodule HelpersValueIntegrationTest do
   use ExUnit.Case, async: true
 
-  alias Helpers.Value
+  alias RamaxUtils.Value
   alias PState
   alias PState.Ref
 
@@ -216,7 +216,7 @@ defmodule HelpersValueIntegrationTest do
 
       pstate = put_in(pstate[entity_key], entity_data)
 
-      # Act: access array by index using Helpers.Value array syntax
+      # Act: access array by index using RamaxUtils.Value array syntax
       first = Value.get(pstate, "#{entity_key}.values[0]")
       second = Value.get(pstate, "#{entity_key}.values[1]")
 

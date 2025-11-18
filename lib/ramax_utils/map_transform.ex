@@ -1,4 +1,4 @@
-defmodule Helpers.MapTransform do
+defmodule RamaxUtils.MapTransform do
   # from https://github.com/olafura/map_transform/blob/master/lib/map_transform.ex
   @moduledoc """
   This is a simple library that can transform one map into another through

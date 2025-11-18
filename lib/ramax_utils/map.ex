@@ -1,4 +1,4 @@
-defmodule Helpers.Map do
+defmodule RamaxUtils.Map do
   @moduledoc """
   Functions to transform maps
   // https://gist.github.com/kipcole9/0bd4c6fb6109bfec9955f785087f53fb - Helpers for Elixir Maps: underscore, atomise and stringify map keys

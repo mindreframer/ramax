@@ -1,4 +1,4 @@
-defmodule Helpers.Value do
+defmodule RamaxUtils.Value do
   @moduledoc """
     Value
   """

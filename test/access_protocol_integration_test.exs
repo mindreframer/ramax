@@ -353,7 +353,7 @@ defmodule PState.AccessProtocolIntegrationTest do
     end
   end
 
-  describe "RMX003_5A_T6: Helpers.Value.get with migration" do
+  describe "RMX003_5A_T6: RamaxUtils.Value.get with migration" do
     test "Value.get works with migration" do
       pstate =
         create_pstate(
@@ -367,7 +367,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = Helpers.Value.get(pstate, "base_card:123.metadata")
+      result = RamaxUtils.Value.get(pstate, "base_card:123.metadata")
 
       assert result == %{notes: "old format"}
     end
@@ -390,7 +390,7 @@ defmodule PState.AccessProtocolIntegrationTest do
         )
 
       # Access through migrated ref
-      result = Helpers.Value.get(pstate, "base_card:123.deck.name")
+      result = RamaxUtils.Value.get(pstate, "base_card:123.deck.name")
 
       assert result == "My Deck"
     end
@@ -412,7 +412,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = Helpers.Value.get(pstate, "host_card:456.base_card.metadata")
+      result = RamaxUtils.Value.get(pstate, "host_card:456.base_card.metadata")
 
       assert result == %{notes: "deeply nested"}
     end
@@ -429,7 +429,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = Helpers.Value.get(pstate, "base_card:123.nonexistent")
+      result = RamaxUtils.Value.get(pstate, "base_card:123.nonexistent")
 
       assert result == nil
     end
@@ -558,7 +558,7 @@ defmodule PState.AccessProtocolIntegrationTest do
           }
         )
 
-      result = Helpers.Value.get(pstate, "base_card:123.metadata")
+      result = RamaxUtils.Value.get(pstate, "base_card:123.metadata")
 
       # No migration
       assert result == "old format"
