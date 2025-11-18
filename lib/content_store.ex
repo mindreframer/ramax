@@ -353,9 +353,13 @@ defmodule ContentStore do
     Enum.reduce(event_specs, {[], event_store}, fn {event_type, payload}, {ids, es} ->
       entity_id = entity_id_extractor.(payload)
 
-      {:ok, event_id, new_es} =
+      # TODO (RMX007_6A): Replace hardcoded space_id with store.space.space_id
+      # This temporary default space_id will be replaced in Phase 6
+      # when ContentStore gets proper space support
+      {:ok, event_id, _space_sequence, new_es} =
         EventStore.append(
           es,
+          1,
           entity_id,
           event_type,
           payload,

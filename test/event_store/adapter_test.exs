@@ -20,9 +20,9 @@ defmodule EventStore.AdapterTest do
       assert {:init, 1} in callbacks
     end
 
-    test "defines append/5 callback" do
+    test "defines append/6 callback" do
       callbacks = EventStore.Adapter.behaviour_info(:callbacks)
-      assert {:append, 5} in callbacks
+      assert {:append, 6} in callbacks
     end
 
     test "defines get_events/3 callback" do
@@ -50,9 +50,19 @@ defmodule EventStore.AdapterTest do
       assert {:get_latest_sequence, 1} in callbacks
     end
 
-    test "has exactly 7 callbacks" do
+    test "defines stream_space_events/3 callback" do
       callbacks = EventStore.Adapter.behaviour_info(:callbacks)
-      assert length(callbacks) == 7
+      assert {:stream_space_events, 3} in callbacks
+    end
+
+    test "defines get_space_latest_sequence/2 callback" do
+      callbacks = EventStore.Adapter.behaviour_info(:callbacks)
+      assert {:get_space_latest_sequence, 2} in callbacks
+    end
+
+    test "has exactly 9 callbacks" do
+      callbacks = EventStore.Adapter.behaviour_info(:callbacks)
+      assert length(callbacks) == 9
     end
   end
 
@@ -68,6 +78,8 @@ defmodule EventStore.AdapterTest do
         Code.fetch_docs(EventStore.Adapter)
 
       assert moduledoc =~ "event_id"
+      assert moduledoc =~ "space_id"
+      assert moduledoc =~ "space_sequence"
       assert moduledoc =~ "entity_id"
       assert moduledoc =~ "event_type"
       assert moduledoc =~ "timestamp"
@@ -104,12 +116,13 @@ defmodule EventStore.AdapterTest do
       assert moduledoc =~ "payload:"
     end
 
-    test "references ADR003 and ADR004" do
+    test "references ADR003, ADR004, and ADR005" do
       {:docs_v1, _, :elixir, _, %{"en" => moduledoc}, _, _} =
         Code.fetch_docs(EventStore.Adapter)
 
       assert moduledoc =~ "ADR003"
       assert moduledoc =~ "ADR004"
+      assert moduledoc =~ "ADR005"
     end
   end
 end
