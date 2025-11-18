@@ -56,7 +56,7 @@ defmodule PState.Adapters.SQLiteTest do
 
       # Verify schema has key, value, updated_at columns
       assert create_sql =~ "key TEXT PRIMARY KEY"
-      assert create_sql =~ "value TEXT NOT NULL"
+      assert create_sql =~ "value BLOB NOT NULL"
       assert create_sql =~ "updated_at INTEGER"
     end
 

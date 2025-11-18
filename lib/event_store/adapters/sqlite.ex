@@ -43,6 +43,8 @@ defmodule EventStore.Adapters.SQLite do
         Exqlite.Sqlite3.execute(db, """
         CREATE TABLE IF NOT EXISTS events (
           event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          space_id INTEGER NOT NULL,
+          space_sequence INTEGER NOT NULL,
           entity_id TEXT NOT NULL,
           event_type TEXT NOT NULL,
           payload BLOB NOT NULL,
@@ -69,6 +71,18 @@ defmodule EventStore.Adapters.SQLite do
         Exqlite.Sqlite3.execute(db, """
         CREATE INDEX IF NOT EXISTS idx_events_correlation_id
         ON events(correlation_id) WHERE correlation_id IS NOT NULL
+        """)
+
+        # Create index for space-based queries ordered by space_sequence
+        Exqlite.Sqlite3.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_events_space_seq
+        ON events(space_id, space_sequence)
+        """)
+
+        # Create composite index for space-entity queries
+        Exqlite.Sqlite3.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_events_space_entity
+        ON events(space_id, entity_id, event_id)
         """)
 
         # Create spaces table for space registry
@@ -103,12 +117,7 @@ defmodule EventStore.Adapters.SQLite do
   end
 
   @impl true
-  def append(state, _space_id, entity_id, event_type, payload, opts \\ []) do
-    # TODO (RMX007_3A): Implement per-space sequences
-    # This is a temporary stub - full implementation in Phase RMX007_3A
-    # space_id parameter unused until schema is updated with space_id column
-    # For now, hardcode space_id=1 in row_to_event metadata
-
+  def append(state, space_id, entity_id, event_type, payload, opts \\ []) do
     timestamp = DateTime.to_unix(DateTime.utc_now(), :millisecond)
     causation_id = Keyword.get(opts, :causation_id)
     correlation_id = Keyword.get(opts, :correlation_id, generate_correlation_id())
@@ -116,34 +125,58 @@ defmodule EventStore.Adapters.SQLite do
     # Compress payload using Erlang term_to_binary
     payload_bin = :erlang.term_to_binary(payload, compressed: 6)
 
-    case Exqlite.Sqlite3.prepare(
-           state.db,
-           """
-           INSERT INTO events (entity_id, event_type, payload, timestamp, causation_id, correlation_id)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-           """
-         ) do
-      {:ok, stmt} ->
-        :ok =
-          Exqlite.Sqlite3.bind(stmt, [
-            entity_id,
-            event_type,
-            payload_bin,
-            timestamp,
-            causation_id,
-            correlation_id
-          ])
+    # Begin transaction to ensure atomic space_sequence increment
+    case Exqlite.Sqlite3.execute(state.db, "BEGIN TRANSACTION") do
+      :ok ->
+        # Get and increment space sequence for this space
+        space_sequence = get_and_increment_space_sequence(state.db, space_id)
 
-        case Exqlite.Sqlite3.step(state.db, stmt) do
-          :done ->
-            {:ok, event_id} = Exqlite.Sqlite3.last_insert_rowid(state.db)
-            # Return space_sequence = event_id as temporary stub
-            {:ok, event_id, event_id, state}
+        # Insert event with space_id and space_sequence
+        case Exqlite.Sqlite3.prepare(
+               state.db,
+               """
+               INSERT INTO events (space_id, space_sequence, entity_id, event_type, payload, timestamp, causation_id, correlation_id)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+               """
+             ) do
+          {:ok, stmt} ->
+            :ok =
+              Exqlite.Sqlite3.bind(stmt, [
+                space_id,
+                space_sequence,
+                entity_id,
+                event_type,
+                payload_bin,
+                timestamp,
+                causation_id,
+                correlation_id
+              ])
 
-          :busy ->
-            {:error, :database_busy}
+            case Exqlite.Sqlite3.step(state.db, stmt) do
+              :done ->
+                {:ok, event_id} = Exqlite.Sqlite3.last_insert_rowid(state.db)
+
+                # Commit transaction
+                case Exqlite.Sqlite3.execute(state.db, "COMMIT") do
+                  :ok ->
+                    {:ok, event_id, space_sequence, state}
+
+                  {:error, reason} ->
+                    Exqlite.Sqlite3.execute(state.db, "ROLLBACK")
+                    {:error, reason}
+                end
+
+              :busy ->
+                Exqlite.Sqlite3.execute(state.db, "ROLLBACK")
+                {:error, :database_busy}
+
+              {:error, reason} ->
+                Exqlite.Sqlite3.execute(state.db, "ROLLBACK")
+                {:error, reason}
+            end
 
           {:error, reason} ->
+            Exqlite.Sqlite3.execute(state.db, "ROLLBACK")
             {:error, reason}
         end
 
@@ -160,7 +193,7 @@ defmodule EventStore.Adapters.SQLite do
     case Exqlite.Sqlite3.prepare(
            state.db,
            """
-           SELECT event_id, entity_id, event_type, payload, timestamp, causation_id, correlation_id
+           SELECT event_id, space_id, space_sequence, entity_id, event_type, payload, timestamp, causation_id, correlation_id
            FROM events
            WHERE entity_id = ?1 AND event_id > ?2
            ORDER BY event_id ASC
@@ -182,7 +215,7 @@ defmodule EventStore.Adapters.SQLite do
     case Exqlite.Sqlite3.prepare(
            state.db,
            """
-           SELECT event_id, entity_id, event_type, payload, timestamp, causation_id, correlation_id
+           SELECT event_id, space_id, space_sequence, entity_id, event_type, payload, timestamp, causation_id, correlation_id
            FROM events
            WHERE event_id = ?1
            """
@@ -209,7 +242,7 @@ defmodule EventStore.Adapters.SQLite do
     case Exqlite.Sqlite3.prepare(
            state.db,
            """
-           SELECT event_id, entity_id, event_type, payload, timestamp, causation_id, correlation_id
+           SELECT event_id, space_id, space_sequence, entity_id, event_type, payload, timestamp, causation_id, correlation_id
            FROM events
            WHERE event_id > ?1
            ORDER BY event_id ASC
@@ -239,7 +272,7 @@ defmodule EventStore.Adapters.SQLite do
         case Exqlite.Sqlite3.prepare(
                state.db,
                """
-               SELECT event_id, entity_id, event_type, payload, timestamp, causation_id, correlation_id
+               SELECT event_id, space_id, space_sequence, entity_id, event_type, payload, timestamp, causation_id, correlation_id
                FROM events
                WHERE event_id > ?1
                ORDER BY event_id ASC
@@ -300,6 +333,8 @@ defmodule EventStore.Adapters.SQLite do
   # Private helper to convert row to event structure
   defp row_to_event([
          event_id,
+         space_id,
+         space_sequence,
          entity_id,
          event_type,
          payload_bin,
@@ -310,13 +345,11 @@ defmodule EventStore.Adapters.SQLite do
     payload = :erlang.binary_to_term(payload_bin)
     timestamp_dt = DateTime.from_unix!(timestamp, :millisecond)
 
-    # TODO (RMX007_3A): Read space_id and space_sequence from database
-    # For now, use hardcoded values until schema is updated
     %{
       metadata: %{
         event_id: event_id,
-        space_id: 1,
-        space_sequence: event_id,
+        space_id: space_id,
+        space_sequence: space_sequence,
         entity_id: entity_id,
         event_type: event_type,
         timestamp: timestamp_dt,
@@ -351,6 +384,59 @@ defmodule EventStore.Adapters.SQLite do
 
   defp to_hex(n) when n < 10, do: ?0 + n
   defp to_hex(n), do: ?a + n - 10
+
+  # Space sequence management
+
+  # Private helper: Get and increment the space_sequence for a given space_id.
+  #
+  # This function:
+  # 1. Ensures a row exists in space_sequences for this space_id
+  # 2. Atomically increments the sequence
+  # 3. Returns the new space_sequence.
+  defp get_and_increment_space_sequence(db, space_id) do
+    # Insert a row if it doesn't exist (with last_sequence = 0)
+    case Exqlite.Sqlite3.prepare(
+           db,
+           "INSERT OR IGNORE INTO space_sequences (space_id, last_sequence) VALUES (?1, 0)"
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
+        Exqlite.Sqlite3.step(db, stmt)
+
+      {:error, _reason} ->
+        :ok
+    end
+
+    # Increment the sequence
+    case Exqlite.Sqlite3.prepare(
+           db,
+           "UPDATE space_sequences SET last_sequence = last_sequence + 1 WHERE space_id = ?1"
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
+        Exqlite.Sqlite3.step(db, stmt)
+
+      {:error, _reason} ->
+        :ok
+    end
+
+    # Get the new sequence
+    case Exqlite.Sqlite3.prepare(
+           db,
+           "SELECT last_sequence FROM space_sequences WHERE space_id = ?1"
+         ) do
+      {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
+
+        case Exqlite.Sqlite3.step(db, stmt) do
+          {:row, [sequence]} -> sequence
+          _ -> 1
+        end
+
+      {:error, _reason} ->
+        1
+    end
+  end
 
   # Space management helpers
 
@@ -508,7 +594,7 @@ defmodule EventStore.Adapters.SQLite do
   Removes:
   - Space record
   - Space sequence
-  - All events in this space (will be added in Phase 3)
+  - All events in this space
   - All PState data in this space (will be added in Phase 5)
   - Projection checkpoints (will be added in Phase 6)
   """
@@ -516,6 +602,9 @@ defmodule EventStore.Adapters.SQLite do
     # Use a transaction for atomic deletion
     case Exqlite.Sqlite3.execute(state.db, "BEGIN TRANSACTION") do
       :ok ->
+        # Delete all events for this space
+        delete_query(state.db, "DELETE FROM events WHERE space_id = ?1", [space_id])
+
         # Delete space sequences
         delete_query(state.db, "DELETE FROM space_sequences WHERE space_id = ?1", [space_id])
 
@@ -574,58 +663,57 @@ defmodule EventStore.Adapters.SQLite do
   end
 
   @impl true
-  def stream_space_events(state, _space_id, opts \\ []) do
-    # TODO (RMX007_3A): Implement space-aware streaming with space_sequences table
-    # This is a temporary stub - full implementation in Phase RMX007_3A
-    # For now, return all events (space filtering not implemented yet)
-
+  def stream_space_events(state, space_id, opts \\ []) do
     from_sequence = Keyword.get(opts, :from_sequence, 0)
     batch_size = Keyword.get(opts, :batch_size, 1000)
 
     Stream.resource(
+      # Initialization: return starting sequence
       fn -> from_sequence end,
+      # Iteration: fetch next batch of events for this space
       fn current_seq ->
         case Exqlite.Sqlite3.prepare(
                state.db,
                """
-               SELECT event_id, entity_id, event_type, payload, timestamp, causation_id, correlation_id
+               SELECT event_id, space_id, space_sequence, entity_id, event_type, payload, timestamp, causation_id, correlation_id
                FROM events
-               WHERE event_id > ?1
-               ORDER BY event_id ASC
-               LIMIT ?2
+               WHERE space_id = ?1 AND space_sequence > ?2
+               ORDER BY space_sequence ASC
+               LIMIT ?3
                """
              ) do
           {:ok, stmt} ->
-            :ok = Exqlite.Sqlite3.bind(stmt, [current_seq, batch_size])
+            :ok = Exqlite.Sqlite3.bind(stmt, [space_id, current_seq, batch_size])
             events = fetch_all_rows(state.db, stmt)
 
-            case events do
-              [] -> {:halt, current_seq}
-              events -> {events, List.last(events).metadata.event_id}
+            if Enum.empty?(events) do
+              {:halt, current_seq}
+            else
+              last_event = List.last(events)
+              next_seq = last_event.metadata.space_sequence
+              {events, next_seq}
             end
 
           {:error, _reason} ->
             {:halt, current_seq}
         end
       end,
-      fn _current_seq -> :ok end
+      # Cleanup: nothing to clean up
+      fn _acc -> :ok end
     )
   end
 
   @impl true
-  def get_space_latest_sequence(state, _space_id) do
-    # TODO (RMX007_3A): Implement per-space sequence tracking
-    # This is a temporary stub - full implementation in Phase RMX007_3A
-    # For now, return the global latest event_id
-
+  def get_space_latest_sequence(state, space_id) do
     case Exqlite.Sqlite3.prepare(
            state.db,
-           "SELECT MAX(event_id) FROM events"
+           "SELECT last_sequence FROM space_sequences WHERE space_id = ?1"
          ) do
       {:ok, stmt} ->
+        :ok = Exqlite.Sqlite3.bind(stmt, [space_id])
+
         case Exqlite.Sqlite3.step(state.db, stmt) do
-          {:row, [nil]} -> {:ok, 0}
-          {:row, [max_id]} -> {:ok, max_id}
+          {:row, [last_sequence]} -> {:ok, last_sequence}
           :done -> {:ok, 0}
           {:error, reason} -> {:error, reason}
         end

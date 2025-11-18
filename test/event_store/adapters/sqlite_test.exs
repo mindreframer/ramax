@@ -373,4 +373,232 @@ defmodule EventStore.Adapters.SQLiteTest do
       {:error, _} -> Enum.reverse(acc)
     end
   end
+
+  describe "RMX007_3A: EventStore SQLite Adapter - Space Support" do
+    test "RMX007_3_T1: append with space_id creates event" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      {:ok, event_id, space_sequence, state} =
+        SQLite.append(state, 1, "entity1", "test.event", %{data: "test"})
+
+      assert event_id == 1
+      assert space_sequence == 1
+
+      {:ok, event} = SQLite.get_event(state, event_id)
+      assert event.metadata.space_id == 1
+      assert event.metadata.space_sequence == 1
+      assert event.payload.data == "test"
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T2: append increments space_sequence" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      {:ok, _id1, seq1, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id2, seq2, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id3, seq3, _state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+
+      assert seq1 == 1
+      assert seq2 == 2
+      assert seq3 == 3
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T3: different spaces have independent sequences" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Space 1
+      {:ok, _id1, seq1, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id2, seq2, state} = SQLite.append(state, 1, "entity2", "test.event", %{})
+
+      # Space 2
+      {:ok, _id3, seq3, state} = SQLite.append(state, 2, "entity1", "test.event", %{})
+      {:ok, _id4, seq4, _state} = SQLite.append(state, 2, "entity2", "test.event", %{})
+
+      # Space 1 sequences
+      assert seq1 == 1
+      assert seq2 == 2
+
+      # Space 2 sequences (should start from 1 again)
+      assert seq3 == 1
+      assert seq4 == 2
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T4: append returns correct space_sequence" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      {:ok, event_id, space_sequence, state} =
+        SQLite.append(state, 1, "entity1", "test.event", %{data: "first"})
+
+      assert space_sequence == 1
+
+      {:ok, event} = SQLite.get_event(state, event_id)
+      assert event.metadata.space_sequence == space_sequence
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T5: space_sequence starts at 1" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      {:ok, _event_id, space_sequence, _state} =
+        SQLite.append(state, 1, "entity1", "test.event", %{})
+
+      assert space_sequence == 1
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T6: global event_id still increments globally" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Space 1
+      {:ok, event_id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+
+      # Space 2
+      {:ok, event_id2, _seq, state} = SQLite.append(state, 2, "entity1", "test.event", %{})
+
+      # Space 1 again
+      {:ok, event_id3, _seq, _state} = SQLite.append(state, 1, "entity2", "test.event", %{})
+
+      # Global event IDs should increment regardless of space
+      assert event_id1 == 1
+      assert event_id2 == 2
+      assert event_id3 == 3
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T7: stream_space_events returns only space events" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Space 1
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{data: "s1e1"})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity2", "test.event", %{data: "s1e2"})
+
+      # Space 2
+      {:ok, _id3, _seq, state} = SQLite.append(state, 2, "entity1", "test.event", %{data: "s2e1"})
+
+      # Space 1 again
+      {:ok, _id4, _seq, state} = SQLite.append(state, 1, "entity3", "test.event", %{data: "s1e3"})
+
+      # Stream space 1 events
+      stream = SQLite.stream_space_events(state, 1)
+      space1_events = Enum.to_list(stream)
+
+      assert length(space1_events) == 3
+      assert Enum.at(space1_events, 0).payload.data == "s1e1"
+      assert Enum.at(space1_events, 1).payload.data == "s1e2"
+      assert Enum.at(space1_events, 2).payload.data == "s1e3"
+
+      # All events should have space_id = 1
+      assert Enum.all?(space1_events, fn event -> event.metadata.space_id == 1 end)
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T8: stream_space_events ordered by space_sequence" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Create events in space 1
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity2", "test.event", %{seq: 2})
+      {:ok, _id3, _seq, state} = SQLite.append(state, 1, "entity3", "test.event", %{seq: 3})
+
+      # Stream space 1 events
+      stream = SQLite.stream_space_events(state, 1)
+      events = Enum.to_list(stream)
+
+      # Verify ordering by space_sequence
+      assert Enum.at(events, 0).metadata.space_sequence == 1
+      assert Enum.at(events, 1).metadata.space_sequence == 2
+      assert Enum.at(events, 2).metadata.space_sequence == 3
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T9: stream_space_events with from_sequence" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Create events in space 1
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity2", "test.event", %{seq: 2})
+      {:ok, _id3, _seq, state} = SQLite.append(state, 1, "entity3", "test.event", %{seq: 3})
+      {:ok, _id4, _seq, state} = SQLite.append(state, 1, "entity4", "test.event", %{seq: 4})
+
+      # Stream from space_sequence > 2
+      stream = SQLite.stream_space_events(state, 1, from_sequence: 2)
+      events = Enum.to_list(stream)
+
+      assert length(events) == 2
+      assert Enum.at(events, 0).metadata.space_sequence == 3
+      assert Enum.at(events, 1).metadata.space_sequence == 4
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T10: get_space_latest_sequence returns correct value" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Initially 0
+      {:ok, seq0} = SQLite.get_space_latest_sequence(state, 1)
+      assert seq0 == 0
+
+      # After appending events
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity2", "test.event", %{})
+      {:ok, _id3, _seq, state} = SQLite.append(state, 1, "entity3", "test.event", %{})
+
+      {:ok, latest_seq} = SQLite.get_space_latest_sequence(state, 1)
+      assert latest_seq == 3
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T11: get_space_latest_sequence returns 0 for new space" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      # Create events in space 1
+      {:ok, _id, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+
+      # Query space 2 (which has no events)
+      {:ok, latest_seq} = SQLite.get_space_latest_sequence(state, 2)
+      assert latest_seq == 0
+
+      cleanup_db(db_path)
+    end
+
+    test "RMX007_3_T12: event metadata includes space_id and space_sequence" do
+      db_path = temp_db_path()
+      {:ok, state} = SQLite.init(database: db_path)
+
+      {:ok, event_id, _space_seq, state} =
+        SQLite.append(state, 5, "entity1", "test.event", %{data: "test"})
+
+      {:ok, event} = SQLite.get_event(state, event_id)
+
+      assert event.metadata.space_id == 5
+      assert event.metadata.space_sequence == 1
+      assert event.metadata.event_id == event_id
+      assert event.metadata.entity_id == "entity1"
+      assert event.metadata.event_type == "test.event"
+
+      cleanup_db(db_path)
+    end
+  end
 end
