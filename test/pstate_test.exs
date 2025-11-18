@@ -8,6 +8,7 @@ defmodule PStateTest do
       # Create a PState struct with all fields
       pstate = %PState{
         root_key: "track:uuid",
+        space_id: 1,
         adapter: PState.Adapters.ETS,
         adapter_state: %{table: :test_table},
         schema: nil,
@@ -16,6 +17,7 @@ defmodule PStateTest do
       }
 
       assert pstate.root_key == "track:uuid"
+      assert pstate.space_id == 1
       assert pstate.adapter == PState.Adapters.ETS
       assert pstate.adapter_state == %{table: :test_table}
       assert pstate.schema == nil
@@ -27,6 +29,16 @@ defmodule PStateTest do
       # Should raise when root_key is missing
       assert_raise ArgumentError, fn ->
         struct!(PState, %{
+          space_id: 1,
+          adapter: PState.Adapters.ETS,
+          adapter_state: %{table: :test_table}
+        })
+      end
+
+      # Should raise when space_id is missing
+      assert_raise ArgumentError, fn ->
+        struct!(PState, %{
+          root_key: "track:uuid",
           adapter: PState.Adapters.ETS,
           adapter_state: %{table: :test_table}
         })
@@ -36,6 +48,7 @@ defmodule PStateTest do
       assert_raise ArgumentError, fn ->
         struct!(PState, %{
           root_key: "track:uuid",
+          space_id: 1,
           adapter_state: %{table: :test_table}
         })
       end
@@ -44,6 +57,7 @@ defmodule PStateTest do
       assert_raise ArgumentError, fn ->
         struct!(PState, %{
           root_key: "track:uuid",
+          space_id: 1,
           adapter: PState.Adapters.ETS
         })
       end
@@ -52,6 +66,7 @@ defmodule PStateTest do
     test "cache defaults to empty map" do
       pstate = %PState{
         root_key: "track:uuid",
+        space_id: 1,
         adapter: PState.Adapters.ETS,
         adapter_state: %{table: :test_table}
       }
@@ -63,6 +78,7 @@ defmodule PStateTest do
     test "allows custom cache values" do
       pstate = %PState{
         root_key: "track:uuid",
+        space_id: 1,
         adapter: PState.Adapters.ETS,
         adapter_state: %{table: :test_table},
         cache: %{"key1" => "value1"},
@@ -79,6 +95,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:550e8400-e29b-41d4-a716-446655440000",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_pstate_init_1]
         )
 
@@ -93,6 +110,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:uuid",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_pstate_init_2]
         )
 
@@ -113,6 +131,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:uuid",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_bidirectional_refs]
         )
 
@@ -305,6 +324,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:uuid",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_schema_1],
           schema: TestSchema
         )
@@ -317,6 +337,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:uuid",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_schema_2],
           schema: TestSchema
         )
@@ -334,6 +355,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:uuid",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_schema_3]
         )
 
@@ -345,6 +367,7 @@ defmodule PStateTest do
       pstate =
         PState.new("track:uuid",
           adapter: PState.Adapters.ETS,
+          space_id: 1,
           adapter_opts: [table_name: :test_schema_4],
           schema: TestSchema
         )

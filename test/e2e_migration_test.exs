@@ -88,6 +88,7 @@ defmodule PState.E2EMigrationTest do
     opts = Keyword.merge(default_opts, adapter_opts)
 
     PState.new("root:test",
+      space_id: 1,
       adapter: adapter,
       adapter_opts: opts,
       schema: TestSchema
@@ -140,7 +141,7 @@ defmodule PState.E2EMigrationTest do
 
       Process.sleep(200)
 
-      {:ok, stored} = pstate.adapter.get(pstate.adapter_state, "base_card:card1")
+      {:ok, stored} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "base_card:card1")
       assert is_map(stored[:translations])
       assert stored[:metadata][:notes] == "old string notes"
 
@@ -373,9 +374,9 @@ defmodule PState.E2EMigrationTest do
       MigrationWriter.flush()
       Process.sleep(100)
 
-      {:ok, stored1} = pstate.adapter.get(pstate.adapter_state, "base_card:card1")
-      {:ok, stored500} = pstate.adapter.get(pstate.adapter_state, "base_card:card500")
-      {:ok, stored1500} = pstate.adapter.get(pstate.adapter_state, "base_card:card1500")
+      {:ok, stored1} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "base_card:card1")
+      {:ok, stored500} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "base_card:card500")
+      {:ok, stored1500} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "base_card:card1500")
 
       assert is_map(stored1[:translations])
       assert is_map(stored500[:translations])
@@ -456,7 +457,7 @@ defmodule PState.E2EMigrationTest do
 
       Process.sleep(200)
 
-      {:ok, stored} = pstate.adapter.get(pstate.adapter_state, "base_card:card1")
+      {:ok, stored} = pstate.adapter.get(pstate.adapter_state, pstate.space_id, "base_card:card1")
 
       assert is_map(stored[:translations])
       assert stored[:metadata][:notes] == "complex notes"
@@ -567,8 +568,8 @@ defmodule PState.E2EMigrationTest do
 
       {multi_get_us, {:ok, batch_results}} =
         :timer.tc(fn ->
-          if function_exported?(pstate.adapter, :multi_get, 2) do
-            pstate.adapter.multi_get(pstate.adapter_state, keys)
+          if function_exported?(pstate.adapter, :multi_get, 3) do
+            pstate.adapter.multi_get(pstate.adapter_state, pstate.space_id, keys)
           else
             {:ok, %{}}
           end

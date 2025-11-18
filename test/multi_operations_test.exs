@@ -7,7 +7,7 @@ defmodule PState.MultiOperationsTest do
     test "T1: multi_get/2 with empty list returns empty map" do
       {:ok, state} = ETS.init([])
 
-      assert {:ok, results} = ETS.multi_get(state, [])
+      assert {:ok, results} = ETS.multi_get(state, 1, [])
       assert results == %{}
     end
 
@@ -16,10 +16,10 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       # Put a value
-      :ok = ETS.put(state, "base_card:uuid1", %{front: "Hello", back: "Hola"})
+      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello", back: "Hola"})
 
       # Multi-get single key
-      assert {:ok, results} = ETS.multi_get(state, ["base_card:uuid1"])
+      assert {:ok, results} = ETS.multi_get(state, 1, ["base_card:uuid1"])
       assert map_size(results) == 1
       assert results["base_card:uuid1"] == %{front: "Hello", back: "Hola"}
     end
@@ -29,13 +29,13 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       # Put multiple values
-      :ok = ETS.put(state, "base_card:uuid1", %{front: "Hello"})
-      :ok = ETS.put(state, "base_card:uuid2", %{front: "Goodbye"})
-      :ok = ETS.put(state, "base_card:uuid3", %{front: "Thank you"})
+      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
+      :ok = ETS.put(state, 1, "base_card:uuid2", %{front: "Goodbye"})
+      :ok = ETS.put(state, 1, "base_card:uuid3", %{front: "Thank you"})
 
       # Multi-get multiple keys
       keys = ["base_card:uuid1", "base_card:uuid2", "base_card:uuid3"]
-      assert {:ok, results} = ETS.multi_get(state, keys)
+      assert {:ok, results} = ETS.multi_get(state, 1, keys)
 
       assert map_size(results) == 3
       assert results["base_card:uuid1"] == %{front: "Hello"}
@@ -48,12 +48,12 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       # Put only some values
-      :ok = ETS.put(state, "base_card:uuid1", %{front: "Hello"})
-      :ok = ETS.put(state, "base_card:uuid3", %{front: "Thank you"})
+      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
+      :ok = ETS.put(state, 1, "base_card:uuid3", %{front: "Thank you"})
 
       # Multi-get including missing key
       keys = ["base_card:uuid1", "base_card:uuid2", "base_card:uuid3"]
-      assert {:ok, results} = ETS.multi_get(state, keys)
+      assert {:ok, results} = ETS.multi_get(state, 1, keys)
 
       # Should only return the keys that exist
       assert map_size(results) == 2
@@ -66,7 +66,7 @@ defmodule PState.MultiOperationsTest do
     test "T5: multi_put/2 with empty list returns :ok" do
       {:ok, state} = ETS.init([])
 
-      assert :ok = ETS.multi_put(state, [])
+      assert :ok = ETS.multi_put(state, 1, [])
     end
 
     # RMX004_2A_T6: Test multi_put with single entry
@@ -74,10 +74,10 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       entries = [{"base_card:uuid1", %{front: "Hello", back: "Hola"}}]
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
       # Verify the entry was stored
-      assert {:ok, %{front: "Hello", back: "Hola"}} = ETS.get(state, "base_card:uuid1")
+      assert {:ok, %{front: "Hello", back: "Hola"}} = ETS.get(state, 1, "base_card:uuid1")
     end
 
     # RMX004_2A_T7: Test multi_put with multiple entries
@@ -90,12 +90,12 @@ defmodule PState.MultiOperationsTest do
         {"base_card:uuid3", %{front: "Thank you"}}
       ]
 
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
       # Verify all entries were stored
-      assert {:ok, %{front: "Hello"}} = ETS.get(state, "base_card:uuid1")
-      assert {:ok, %{front: "Goodbye"}} = ETS.get(state, "base_card:uuid2")
-      assert {:ok, %{front: "Thank you"}} = ETS.get(state, "base_card:uuid3")
+      assert {:ok, %{front: "Hello"}} = ETS.get(state, 1, "base_card:uuid1")
+      assert {:ok, %{front: "Goodbye"}} = ETS.get(state, 1, "base_card:uuid2")
+      assert {:ok, %{front: "Thank you"}} = ETS.get(state, 1, "base_card:uuid3")
     end
 
     # RMX004_2A_T8: Test multi_put overwrites existing
@@ -103,12 +103,12 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       # Put initial values
-      :ok = ETS.put(state, "base_card:uuid1", %{front: "Old Hello"})
-      :ok = ETS.put(state, "base_card:uuid2", %{front: "Old Goodbye"})
+      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Old Hello"})
+      :ok = ETS.put(state, 1, "base_card:uuid2", %{front: "Old Goodbye"})
 
       # Verify initial values
-      assert {:ok, %{front: "Old Hello"}} = ETS.get(state, "base_card:uuid1")
-      assert {:ok, %{front: "Old Goodbye"}} = ETS.get(state, "base_card:uuid2")
+      assert {:ok, %{front: "Old Hello"}} = ETS.get(state, 1, "base_card:uuid1")
+      assert {:ok, %{front: "Old Goodbye"}} = ETS.get(state, 1, "base_card:uuid2")
 
       # Overwrite with multi_put
       entries = [
@@ -116,11 +116,11 @@ defmodule PState.MultiOperationsTest do
         {"base_card:uuid2", %{front: "New Goodbye"}}
       ]
 
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
       # Verify values were overwritten
-      assert {:ok, %{front: "New Hello"}} = ETS.get(state, "base_card:uuid1")
-      assert {:ok, %{front: "New Goodbye"}} = ETS.get(state, "base_card:uuid2")
+      assert {:ok, %{front: "New Hello"}} = ETS.get(state, 1, "base_card:uuid1")
+      assert {:ok, %{front: "New Goodbye"}} = ETS.get(state, 1, "base_card:uuid2")
     end
   end
 
@@ -129,7 +129,7 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       keys = ["base_card:uuid1", "base_card:uuid2", "base_card:uuid3"]
-      assert {:ok, results} = ETS.multi_get(state, keys)
+      assert {:ok, results} = ETS.multi_get(state, 1, keys)
       assert results == %{}
     end
 
@@ -137,7 +137,7 @@ defmodule PState.MultiOperationsTest do
       {:ok, state} = ETS.init([])
 
       # Put initial value
-      :ok = ETS.put(state, "base_card:uuid1", %{front: "Existing"})
+      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Existing"})
 
       # Multi-put with mix of existing and new
       entries = [
@@ -145,11 +145,11 @@ defmodule PState.MultiOperationsTest do
         {"base_card:uuid2", %{front: "New"}}
       ]
 
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
       # Verify both are correct
-      assert {:ok, %{front: "Updated"}} = ETS.get(state, "base_card:uuid1")
-      assert {:ok, %{front: "New"}} = ETS.get(state, "base_card:uuid2")
+      assert {:ok, %{front: "Updated"}} = ETS.get(state, 1, "base_card:uuid1")
+      assert {:ok, %{front: "New"}} = ETS.get(state, 1, "base_card:uuid2")
     end
 
     test "multi_get/2 and multi_put/2 work together" do
@@ -162,11 +162,11 @@ defmodule PState.MultiOperationsTest do
         {"base_card:uuid3", %{front: "Thank you"}}
       ]
 
-      :ok = ETS.multi_put(state, entries)
+      :ok = ETS.multi_put(state, 1, entries)
 
       # Multi-get all entries
       keys = ["base_card:uuid1", "base_card:uuid2", "base_card:uuid3"]
-      assert {:ok, results} = ETS.multi_get(state, keys)
+      assert {:ok, results} = ETS.multi_get(state, 1, keys)
 
       assert map_size(results) == 3
       assert results["base_card:uuid1"] == %{front: "Hello"}
@@ -184,21 +184,21 @@ defmodule PState.MultiOperationsTest do
         {"base_card:uuid1", %{front: "Third"}}
       ]
 
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
       # ETS insert with list processes entries in order, so last one wins
-      assert {:ok, %{front: "Third"}} = ETS.get(state, "base_card:uuid1")
+      assert {:ok, %{front: "Third"}} = ETS.get(state, 1, "base_card:uuid1")
     end
 
     test "multi_get/2 with duplicate keys in input returns single entry" do
       {:ok, state} = ETS.init([])
 
       # Put a value
-      :ok = ETS.put(state, "base_card:uuid1", %{front: "Hello"})
+      :ok = ETS.put(state, 1, "base_card:uuid1", %{front: "Hello"})
 
       # Multi-get with duplicate keys
       keys = ["base_card:uuid1", "base_card:uuid1", "base_card:uuid1"]
-      assert {:ok, results} = ETS.multi_get(state, keys)
+      assert {:ok, results} = ETS.multi_get(state, 1, keys)
 
       # Should return single entry
       assert map_size(results) == 1
@@ -213,10 +213,10 @@ defmodule PState.MultiOperationsTest do
         {"key2", %{value: "not nil"}}
       ]
 
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
-      assert {:ok, nil} = ETS.get(state, "key1")
-      assert {:ok, %{value: "not nil"}} = ETS.get(state, "key2")
+      assert {:ok, nil} = ETS.get(state, 1, "key1")
+      assert {:ok, %{value: "not nil"}} = ETS.get(state, 1, "key2")
     end
 
     test "multi_get/2 with large batch (100 keys)" do
@@ -228,11 +228,11 @@ defmodule PState.MultiOperationsTest do
           {"base_card:uuid#{i}", %{front: "Card #{i}"}}
         end)
 
-      :ok = ETS.multi_put(state, entries)
+      :ok = ETS.multi_put(state, 1, entries)
 
       # Multi-get all 100
       keys = Enum.map(1..100, fn i -> "base_card:uuid#{i}" end)
-      assert {:ok, results} = ETS.multi_get(state, keys)
+      assert {:ok, results} = ETS.multi_get(state, 1, keys)
 
       assert map_size(results) == 100
 
@@ -251,14 +251,14 @@ defmodule PState.MultiOperationsTest do
           {"base_card:uuid#{i}", %{front: "Card #{i}", back: "Back #{i}"}}
         end)
 
-      assert :ok = ETS.multi_put(state, entries)
+      assert :ok = ETS.multi_put(state, 1, entries)
 
       # Verify all were stored
       Enum.each(1..100, fn i ->
         key = "base_card:uuid#{i}"
         expected_front = "Card #{i}"
         expected_back = "Back #{i}"
-        assert {:ok, %{front: ^expected_front, back: ^expected_back}} = ETS.get(state, key)
+        assert {:ok, %{front: ^expected_front, back: ^expected_back}} = ETS.get(state, 1, key)
       end)
     end
   end

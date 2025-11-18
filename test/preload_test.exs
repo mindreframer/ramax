@@ -6,7 +6,7 @@ defmodule PState.PreloadTest do
     # RMX004_8A_T1: Test preload single ref
     test "T1: preload/3 with single ref warms cache" do
       # Setup: Create pstate with a deck that has a single card ref
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Create a card
       card_data = %{front: "Hello", back: "Hola"}
@@ -33,7 +33,7 @@ defmodule PState.PreloadTest do
     # RMX004_8A_T2: Test preload collection
     test "T2: preload/3 with collection preloads all refs" do
       # Setup: Create pstate with a deck that has multiple cards
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Create cards
       card1_data = %{front: "Hello", back: "Hola"}
@@ -75,7 +75,7 @@ defmodule PState.PreloadTest do
     # RMX004_8A_T3: Test preload nested paths
     test "T3: preload/3 with nested paths preloads recursively" do
       # Setup: Create deck → cards → translations structure
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Create translations
       trans1_data = %{language: "es", text: "Hola"}
@@ -123,10 +123,10 @@ defmodule PState.PreloadTest do
     # RMX004_8A_T4: Test preload with multi_get
     test "T4: preload/3 uses multi_get when available" do
       # Setup: Create pstate with ETS adapter (supports multi_get)
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Verify adapter supports multi_get
-      assert function_exported?(ETS, :multi_get, 2)
+      assert function_exported?(ETS, :multi_get, 3)
 
       # Create multiple cards
       cards =
@@ -168,7 +168,7 @@ defmodule PState.PreloadTest do
     # RMX004_8A_T5: Test cache warming
     test "T5: preload/3 warms cache and avoids subsequent adapter calls" do
       # Setup
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Create entities
       card_data = %{front: "Hello", back: "Hola"}
@@ -197,7 +197,7 @@ defmodule PState.PreloadTest do
     # RMX004_8A_T6: Test preload performance (<20ms for 100 refs)
     test "T6: preload/3 completes in <20ms for 100 refs" do
       # Setup
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Create 100 cards
       cards =
@@ -243,7 +243,7 @@ defmodule PState.PreloadTest do
 
   describe "RMX004_8A: Preloading Edge Cases" do
     test "preload/3 with missing entity returns unchanged pstate" do
-      pstate = PState.new("base_deck:missing", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:missing", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Preload on non-existent entity
       result = PState.preload(pstate, "base_deck:missing", [:cards])
@@ -253,7 +253,7 @@ defmodule PState.PreloadTest do
     end
 
     test "preload/3 with non-map entity returns unchanged pstate" do
-      pstate = PState.new("value:simple", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("value:simple", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Put a non-map value
       pstate = put_in(pstate["value:simple"], "just a string")
@@ -266,7 +266,7 @@ defmodule PState.PreloadTest do
     end
 
     test "preload/3 with empty paths returns unchanged pstate" do
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       deck_data = %{name: "Test"}
       pstate = put_in(pstate["base_deck:deck1"], deck_data)
@@ -279,7 +279,7 @@ defmodule PState.PreloadTest do
     end
 
     test "preload/3 with non-existent field returns unchanged pstate" do
-      pstate = PState.new("base_deck:deck1", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("base_deck:deck1", space_id: 1, adapter: ETS, adapter_opts: [])
 
       deck_data = %{name: "Test"}
       pstate = put_in(pstate["base_deck:deck1"], deck_data)
@@ -293,7 +293,7 @@ defmodule PState.PreloadTest do
     end
 
     test "preload/3 with multiple fields preloads all" do
-      pstate = PState.new("entity:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("entity:root", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Create entities
       ref1_data = %{value: "ref1"}
@@ -318,7 +318,7 @@ defmodule PState.PreloadTest do
     end
 
     test "preload/3 with nil field value doesn't crash" do
-      pstate = PState.new("entity:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("entity:root", space_id: 1, adapter: ETS, adapter_opts: [])
 
       root_data = %{field: nil}
       pstate = put_in(pstate["entity:root"], root_data)

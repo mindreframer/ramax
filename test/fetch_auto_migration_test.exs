@@ -41,6 +41,7 @@ defmodule PState.FetchAutoMigrationTest do
     pstate =
       PState.new("root:test",
         adapter: PState.Adapters.ETS,
+          space_id: 1,
         adapter_opts: [table_name: table_name],
         schema: schema
       )

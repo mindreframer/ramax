@@ -8,7 +8,7 @@ defmodule PState.InternalTest do
 
   describe "fetch_with_cache/2" do
     setup do
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
       {:ok, pstate: pstate}
     end
 
@@ -21,7 +21,7 @@ defmodule PState.InternalTest do
 
     test "RMX001_3B_T2: fetches from adapter on cache miss", %{pstate: pstate} do
       # Store value in adapter
-      :ok = ETS.put(pstate.adapter_state, "test:key", %{data: "from_adapter"})
+      :ok = ETS.put(pstate.adapter_state, 1, "test:key", %{data: "from_adapter"})
 
       assert {:ok, %{data: "from_adapter"}} = Internal.fetch_with_cache(pstate, "test:key")
     end
@@ -39,7 +39,7 @@ defmodule PState.InternalTest do
         nested: %{ref: ref}
       }
 
-      :ok = ETS.put(pstate.adapter_state, "test:key", value)
+      :ok = ETS.put(pstate.adapter_state, 1, "test:key", value)
 
       assert {:ok, fetched} = Internal.fetch_with_cache(pstate, "test:key")
       assert %Ref{key: "target:123"} = fetched.ref_field
@@ -49,7 +49,7 @@ defmodule PState.InternalTest do
 
   describe "put_and_invalidate/3" do
     setup do
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
       {:ok, pstate: pstate}
     end
 
@@ -57,7 +57,7 @@ defmodule PState.InternalTest do
       pstate = Internal.put_and_invalidate(pstate, "test:key", %{data: "value"})
 
       # Verify written to adapter
-      assert {:ok, %{data: "value"}} = ETS.get(pstate.adapter_state, "test:key")
+      assert {:ok, %{data: "value"}} = ETS.get(pstate.adapter_state, 1, "test:key")
     end
 
     test "RMX001_3B_T6: updates cache with value", %{pstate: pstate} do
@@ -89,7 +89,7 @@ defmodule PState.InternalTest do
       pstate = Internal.put_and_invalidate(pstate, "test:key", value)
 
       # Verify encoded value in adapter
-      assert {:ok, stored} = ETS.get(pstate.adapter_state, "test:key")
+      assert {:ok, stored} = ETS.get(pstate.adapter_state, 1, "test:key")
       assert %Ref{key: "target:123"} = stored.ref_field
       assert %Ref{key: "target:123"} = stored.nested.ref
     end
@@ -108,18 +108,18 @@ defmodule PState.InternalTest do
 
   describe "delete_and_invalidate/2" do
     setup do
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
       {:ok, pstate: pstate}
     end
 
     test "RMX001_3B_T10: removes key from adapter", %{pstate: pstate} do
       # Store value first
-      :ok = ETS.put(pstate.adapter_state, "test:key", %{data: "value"})
+      :ok = ETS.put(pstate.adapter_state, 1, "test:key", %{data: "value"})
 
       pstate = Internal.delete_and_invalidate(pstate, "test:key")
 
       # Verify removed from adapter
-      assert {:ok, nil} = ETS.get(pstate.adapter_state, "test:key")
+      assert {:ok, nil} = ETS.get(pstate.adapter_state, 1, "test:key")
     end
 
     test "RMX001_3B_T11: removes key from cache", %{pstate: pstate} do
@@ -156,7 +156,7 @@ defmodule PState.InternalTest do
       ref = Ref.new("target:123")
 
       # Test via put_and_invalidate which calls encode_value
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
       pstate = Internal.put_and_invalidate(pstate, "test:key", ref)
 
       # Test via fetch_with_cache which calls decode_value
@@ -176,7 +176,7 @@ defmodule PState.InternalTest do
         }
       }
 
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
       pstate = Internal.put_and_invalidate(pstate, "test:key", value)
 
       assert {:ok, decoded} = Internal.fetch_with_cache(pstate, "test:key")
@@ -193,7 +193,7 @@ defmodule PState.InternalTest do
         map: %{nested: "value"}
       }
 
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
       pstate = Internal.put_and_invalidate(pstate, "test:key", value)
 
       assert {:ok, ^value} = Internal.fetch_with_cache(pstate, "test:key")
@@ -202,20 +202,20 @@ defmodule PState.InternalTest do
 
   describe "cache behavior" do
     test "RMX001_3B_T17: cache hit avoids adapter call" do
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Populate cache
       pstate = put_in(pstate.cache["test:key"], %{data: "cached"})
 
       # Clear adapter to ensure it's not called
-      :ok = ETS.delete(pstate.adapter_state, "test:key")
+      :ok = ETS.delete(pstate.adapter_state, 1, "test:key")
 
       # Should return cached value without adapter call
       assert {:ok, %{data: "cached"}} = Internal.fetch_with_cache(pstate, "test:key")
     end
 
     test "RMX001_3B_T18: multiple puts update cache correctly" do
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
 
       pstate = Internal.put_and_invalidate(pstate, "test:key", %{version: 1})
       assert %{version: 1} = pstate.cache["test:key"]
@@ -224,11 +224,11 @@ defmodule PState.InternalTest do
       assert %{version: 2} = pstate.cache["test:key"]
 
       # Verify adapter has latest version
-      assert {:ok, %{version: 2}} = ETS.get(pstate.adapter_state, "test:key")
+      assert {:ok, %{version: 2}} = ETS.get(pstate.adapter_state, 1, "test:key")
     end
 
     test "RMX001_3B_T19: ref_cache invalidation is complete" do
-      pstate = PState.new("test:root", adapter: ETS, adapter_opts: [])
+      pstate = PState.new("test:root", space_id: 1, adapter: ETS, adapter_opts: [])
 
       # Populate ref_cache with multiple entries
       pstate =

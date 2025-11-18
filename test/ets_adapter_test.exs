@@ -33,15 +33,15 @@ defmodule PState.Adapters.ETSTest do
       assert {:ok, nil} = ETS.get(state, 1, "base_card:uuid")
     end
 
-    # RMX001_2A_T3: Test ETS put stores value
+    # RMX001_2A_T3: Test ETS put stores value successfully
     test "T3: put/3 stores value successfully" do
       {:ok, state} = ETS.init([])
 
       assert :ok = ETS.put(state, 1, "test_key", "test_value")
       assert :ok = ETS.put(state, 1, "base_card:uuid", %{front: "Hello", back: "Hola"})
 
-      # Verify values are actually in ETS
-      assert [{_, "test_value"}] = :ets.lookup(state.table, "test_key")
+      # Verify values are actually in ETS with composite keys
+      assert [{{1, "test_key"}, "test_value"}] = :ets.lookup(state.table, {1, "test_key"})
     end
 
     # RMX001_2A_T4: Test ETS get retrieves stored value
@@ -149,6 +149,121 @@ defmodule PState.Adapters.ETSTest do
 
       # Scan empty table
       assert {:ok, []} = ETS.scan(state, 1, "base_card:", [])
+    end
+  end
+
+  describe "RMX007_5A: ETS Adapter Space Support" do
+    # RMX007_5_T4: Test ETS get/put/delete with space_id
+    test "RMX007_5_T4: get/put/delete with space_id" do
+      {:ok, state} = ETS.init([])
+
+      # Put value in space 1
+      :ok = ETS.put(state, 1, "key1", %{data: "value1"})
+      {:ok, value} = ETS.get(state, 1, "key1")
+      assert value == %{data: "value1"}
+
+      # Delete the value
+      :ok = ETS.delete(state, 1, "key1")
+      {:ok, nil} = ETS.get(state, 1, "key1")
+    end
+
+    # RMX007_5_T5: Test different spaces are isolated
+    test "RMX007_5_T5: different spaces are isolated" do
+      {:ok, state} = ETS.init([])
+
+      # Put same key in different spaces
+      :ok = ETS.put(state, 1, "key", %{space: 1})
+      :ok = ETS.put(state, 2, "key", %{space: 2})
+
+      # Values should be isolated
+      {:ok, value1} = ETS.get(state, 1, "key")
+      {:ok, value2} = ETS.get(state, 2, "key")
+
+      assert value1 == %{space: 1}
+      assert value2 == %{space: 2}
+    end
+
+    test "composite key isolation" do
+      {:ok, state} = ETS.init([])
+
+      # Put different values with same key in different spaces
+      :ok = ETS.put(state, 1, "shared_key", %{tenant: "acme"})
+      :ok = ETS.put(state, 2, "shared_key", %{tenant: "widgets"})
+      :ok = ETS.put(state, 3, "shared_key", %{tenant: "staging"})
+
+      # Each space should have its own value
+      {:ok, val1} = ETS.get(state, 1, "shared_key")
+      {:ok, val2} = ETS.get(state, 2, "shared_key")
+      {:ok, val3} = ETS.get(state, 3, "shared_key")
+
+      assert val1 == %{tenant: "acme"}
+      assert val2 == %{tenant: "widgets"}
+      assert val3 == %{tenant: "staging"}
+
+      # Delete from one space shouldn't affect others
+      :ok = ETS.delete(state, 2, "shared_key")
+      {:ok, nil} = ETS.get(state, 2, "shared_key")
+      {:ok, val1_after} = ETS.get(state, 1, "shared_key")
+      {:ok, val3_after} = ETS.get(state, 3, "shared_key")
+
+      assert val1_after == %{tenant: "acme"}
+      assert val3_after == %{tenant: "staging"}
+    end
+
+    test "scan with space_id returns only space data" do
+      {:ok, state} = ETS.init([])
+
+      # Put data in different spaces with same prefix
+      :ok = ETS.put(state, 1, "card:1", %{id: 1, space: 1})
+      :ok = ETS.put(state, 1, "card:2", %{id: 2, space: 1})
+      :ok = ETS.put(state, 2, "card:1", %{id: 1, space: 2})
+      :ok = ETS.put(state, 2, "card:3", %{id: 3, space: 2})
+
+      # Scan space 1
+      {:ok, results1} = ETS.scan(state, 1, "card:", [])
+      assert length(results1) == 2
+      assert {"card:1", %{id: 1, space: 1}} in results1
+      assert {"card:2", %{id: 2, space: 1}} in results1
+
+      # Scan space 2
+      {:ok, results2} = ETS.scan(state, 2, "card:", [])
+      assert length(results2) == 2
+      assert {"card:1", %{id: 1, space: 2}} in results2
+      assert {"card:3", %{id: 3, space: 2}} in results2
+    end
+
+    test "multi_get with space_id" do
+      {:ok, state} = ETS.init([])
+
+      # Put data in different spaces
+      :ok = ETS.put(state, 1, "key1", %{val: 1})
+      :ok = ETS.put(state, 1, "key2", %{val: 2})
+      :ok = ETS.put(state, 2, "key1", %{val: 3})
+
+      # Multi-get from space 1
+      {:ok, results1} = ETS.multi_get(state, 1, ["key1", "key2", "key3"])
+      assert results1 == %{"key1" => %{val: 1}, "key2" => %{val: 2}}
+
+      # Multi-get from space 2
+      {:ok, results2} = ETS.multi_get(state, 2, ["key1", "key2"])
+      assert results2 == %{"key1" => %{val: 3}}
+    end
+
+    test "multi_put with space_id" do
+      {:ok, state} = ETS.init([])
+
+      # Multi-put in space 1
+      :ok = ETS.multi_put(state, 1, [{"key1", %{val: 1}}, {"key2", %{val: 2}}])
+
+      {:ok, val1} = ETS.get(state, 1, "key1")
+      {:ok, val2} = ETS.get(state, 1, "key2")
+
+      assert val1 == %{val: 1}
+      assert val2 == %{val: 2}
+
+      # Same keys in space 2 should not exist
+      {:ok, nil} = ETS.get(state, 2, "key1")
+      {:ok, nil} = ETS.get(state, 2, "key2")
     end
   end
 

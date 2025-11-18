@@ -9,7 +9,7 @@ defmodule FlashcardCommandTest do
 
   describe "RMX006_1A: Command Module - create_deck" do
     test "RMX006_1A_T1: create_deck generates deck.created event" do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       params = %{deck_id: "spanish-101", name: "Spanish Basics"}
 
@@ -22,7 +22,7 @@ defmodule FlashcardCommandTest do
     end
 
     test "create_deck returns error when deck already exists" do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       # Add existing deck to pstate
       deck_data = %{
@@ -41,7 +41,7 @@ defmodule FlashcardCommandTest do
 
   describe "RMX006_1A: Command Module - create_card" do
     setup do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       # Create a deck in pstate
       deck_data = %{
@@ -56,7 +56,7 @@ defmodule FlashcardCommandTest do
     end
 
     test "RMX006_1A_T2: create_card validates deck exists", %{pstate: _pstate} do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       params = %{
         card_id: "card-1",
@@ -108,7 +108,7 @@ defmodule FlashcardCommandTest do
     end
 
     test "RMX006_1A_T5: create_card returns error when deck not found" do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       params = %{
         card_id: "card-1",
@@ -144,7 +144,7 @@ defmodule FlashcardCommandTest do
 
   describe "RMX006_1A: Command Module - update_card" do
     setup do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       # Create a card in pstate
       card_data = %{
@@ -161,7 +161,7 @@ defmodule FlashcardCommandTest do
     end
 
     test "RMX006_1A_T7: update_card validates card exists" do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       params = %{
         card_id: "nonexistent-card",
@@ -231,7 +231,7 @@ defmodule FlashcardCommandTest do
 
   describe "RMX006_1A: Command Module - add_translation" do
     setup do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       # Create a card in pstate
       card_data = %{
@@ -248,7 +248,7 @@ defmodule FlashcardCommandTest do
     end
 
     test "RMX006_1A_T12: add_translation validates card exists" do
-      pstate = PState.new("content:root", adapter: PState.Adapters.ETS)
+      pstate = PState.new("content:root", space_id: 1, adapter: PState.Adapters.ETS)
 
       params = %{
         card_id: "nonexistent-card",

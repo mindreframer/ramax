@@ -29,6 +29,7 @@ defmodule PState.TelemetryTest do
     # Create test PState
     pstate =
       PState.new("track:test",
+        space_id: 1,
         adapter: Adapters.ETS,
         adapter_opts: [table_name: @test_table]
       )
@@ -280,7 +281,7 @@ defmodule PState.TelemetryTest do
 
       # Write data directly to adapter (bypass cache)
       data = %{id: "123", front: "Hello"}
-      :ok = pstate.adapter.put(pstate.adapter_state, "base_card:123", data)
+      :ok = pstate.adapter.put(pstate.adapter_state, pstate.space_id, "base_card:123", data)
 
       # First fetch - not from cache (we didn't use put_in)
       _result = pstate["base_card:123"]

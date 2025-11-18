@@ -90,6 +90,7 @@ defmodule ContentStore do
   - `:event_opts` - Options to pass to EventStore adapter (default: `[]`)
   - `:pstate_adapter` - PState adapter module (default: `PState.Adapters.ETS`)
   - `:pstate_opts` - Options to pass to PState adapter (default: `[]`)
+  - `:space_id` - Space ID for PState multi-tenancy (default: `1`)
   - `:root_key` - Root key for PState (default: `"content:root"`)
   - `:schema` - PState schema (optional)
   - `:event_applicator` - Module implementing event application logic (optional)
@@ -121,6 +122,7 @@ defmodule ContentStore do
       event_opts: Keyword.get(opts, :event_opts, []),
       pstate_adapter: Keyword.get(opts, :pstate_adapter, PState.Adapters.ETS),
       pstate_opts: Keyword.get(opts, :pstate_opts, []),
+      space_id: Keyword.get(opts, :space_id, 1),
       root_key: root_key,
       schema: Keyword.get(opts, :schema),
       event_applicator: Keyword.get(opts, :event_applicator),
@@ -138,6 +140,7 @@ defmodule ContentStore do
     pstate =
       PState.new(
         config.root_key,
+        space_id: config.space_id,
         adapter: config.pstate_adapter,
         adapter_opts: config.pstate_opts,
         schema: config.schema
@@ -268,6 +271,7 @@ defmodule ContentStore do
     fresh_pstate =
       PState.new(
         store.config.root_key,
+        space_id: store.config.space_id,
         adapter: store.config.pstate_adapter,
         adapter_opts: store.config.pstate_opts,
         schema: store.config.schema

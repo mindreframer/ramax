@@ -54,23 +54,25 @@ defmodule PState.Adapters.SQLiteTest do
       {:row, [create_sql]} = Exqlite.Sqlite3.step(state.conn, stmt)
       :ok = Exqlite.Sqlite3.release(state.conn, stmt)
 
-      # Verify schema has key, value, updated_at columns
-      assert create_sql =~ "key TEXT PRIMARY KEY"
+      # Verify schema has space_id, key, value, updated_at columns with composite PK
+      assert create_sql =~ "space_id INTEGER NOT NULL"
+      assert create_sql =~ "key TEXT NOT NULL"
       assert create_sql =~ "value BLOB NOT NULL"
       assert create_sql =~ "updated_at INTEGER"
+      assert create_sql =~ "PRIMARY KEY (space_id, key)"
     end
 
     # RMX004_3A_T4: Test index creation
-    test "T4: init/1 creates index on updated_at", %{db_path: db_path} do
+    test "T4: init/1 creates index on space_id", %{db_path: db_path} do
       assert {:ok, state} = SQLite.init(path: db_path)
 
       # Query indexes
-      sql = "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_updated_at'"
+      sql = "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_pstate_space'"
       {:ok, stmt} = Exqlite.Sqlite3.prepare(state.conn, sql)
       {:row, [index_name]} = Exqlite.Sqlite3.step(state.conn, stmt)
       :ok = Exqlite.Sqlite3.release(state.conn, stmt)
 
-      assert index_name == "idx_updated_at"
+      assert index_name == "idx_pstate_space"
     end
 
     # RMX004_3A_T5: Test put/get single value
@@ -181,8 +183,8 @@ defmodule PState.Adapters.SQLiteTest do
     test "T11: data persists across connection close/reopen", %{db_path: db_path} do
       # First connection - insert data
       {:ok, state1} = SQLite.init(path: db_path)
-      :ok = SQLite.put(state1, "persistent_key", %{value: "persistent_data"})
-      assert {:ok, %{value: "persistent_data"}} = SQLite.get(state1, "persistent_key")
+      :ok = SQLite.put(state1, 1, "persistent_key", %{value: "persistent_data"})
+      assert {:ok, %{value: "persistent_data"}} = SQLite.get(state1, 1, "persistent_key")
 
       # Close connection
       :ok = Exqlite.Sqlite3.close(state1.conn)
@@ -191,7 +193,7 @@ defmodule PState.Adapters.SQLiteTest do
       {:ok, state2} = SQLite.init(path: db_path)
 
       # Verify data is still there
-      assert {:ok, %{value: "persistent_data"}} = SQLite.get(state2, "persistent_key")
+      assert {:ok, %{value: "persistent_data"}} = SQLite.get(state2, 1, "persistent_key")
     end
   end
 
@@ -571,6 +573,139 @@ defmodule PState.Adapters.SQLiteTest do
       assert {:ok, data} = SQLite.get(state, 1, first_key)
       assert Map.has_key?(data, :front)
       assert Map.has_key?(data, :metadata)
+    end
+  end
+
+  describe "RMX007_5A: SQLite Adapter Space Support" do
+    # RMX007_5_T1: Test SQLite get/put/delete with space_id
+    test "RMX007_5_T1: get/put/delete with space_id", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Put value in space 1
+      :ok = SQLite.put(state, 1, "key1", %{data: "value1"})
+      {:ok, value} = SQLite.get(state, 1, "key1")
+      assert value == %{data: "value1"}
+
+      # Delete the value
+      :ok = SQLite.delete(state, 1, "key1")
+      {:ok, nil} = SQLite.get(state, 1, "key1")
+    end
+
+    # RMX007_5_T2: Test different spaces are isolated
+    test "RMX007_5_T2: different spaces are isolated", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Put same key in different spaces
+      :ok = SQLite.put(state, 1, "key", %{space: 1})
+      :ok = SQLite.put(state, 2, "key", %{space: 2})
+
+      # Values should be isolated
+      {:ok, value1} = SQLite.get(state, 1, "key")
+      {:ok, value2} = SQLite.get(state, 2, "key")
+
+      assert value1 == %{space: 1}
+      assert value2 == %{space: 2}
+    end
+
+    # RMX007_5_T3: Test same key in different spaces
+    test "RMX007_5_T3: same key in different spaces", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Put different values with same key in different spaces
+      :ok = SQLite.put(state, 1, "shared_key", %{tenant: "acme"})
+      :ok = SQLite.put(state, 2, "shared_key", %{tenant: "widgets"})
+      :ok = SQLite.put(state, 3, "shared_key", %{tenant: "staging"})
+
+      # Each space should have its own value
+      {:ok, val1} = SQLite.get(state, 1, "shared_key")
+      {:ok, val2} = SQLite.get(state, 2, "shared_key")
+      {:ok, val3} = SQLite.get(state, 3, "shared_key")
+
+      assert val1 == %{tenant: "acme"}
+      assert val2 == %{tenant: "widgets"}
+      assert val3 == %{tenant: "staging"}
+
+      # Delete from one space shouldn't affect others
+      :ok = SQLite.delete(state, 2, "shared_key")
+      {:ok, nil} = SQLite.get(state, 2, "shared_key")
+      {:ok, val1_after} = SQLite.get(state, 1, "shared_key")
+      {:ok, val3_after} = SQLite.get(state, 3, "shared_key")
+
+      assert val1_after == %{tenant: "acme"}
+      assert val3_after == %{tenant: "staging"}
+    end
+
+    test "scan with space_id returns only space data", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Put data in different spaces with same prefix
+      :ok = SQLite.put(state, 1, "card:1", %{id: 1, space: 1})
+      :ok = SQLite.put(state, 1, "card:2", %{id: 2, space: 1})
+      :ok = SQLite.put(state, 2, "card:1", %{id: 1, space: 2})
+      :ok = SQLite.put(state, 2, "card:3", %{id: 3, space: 2})
+
+      # Scan space 1
+      {:ok, results1} = SQLite.scan(state, 1, "card:", [])
+      assert length(results1) == 2
+      assert {"card:1", %{id: 1, space: 1}} in results1
+      assert {"card:2", %{id: 2, space: 1}} in results1
+
+      # Scan space 2
+      {:ok, results2} = SQLite.scan(state, 2, "card:", [])
+      assert length(results2) == 2
+      assert {"card:1", %{id: 1, space: 2}} in results2
+      assert {"card:3", %{id: 3, space: 2}} in results2
+    end
+
+    test "multi_get with space_id", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Put data in different spaces
+      :ok = SQLite.put(state, 1, "key1", %{val: 1})
+      :ok = SQLite.put(state, 1, "key2", %{val: 2})
+      :ok = SQLite.put(state, 2, "key1", %{val: 3})
+
+      # Multi-get from space 1
+      {:ok, results1} = SQLite.multi_get(state, 1, ["key1", "key2", "key3"])
+      assert results1 == %{"key1" => %{val: 1}, "key2" => %{val: 2}}
+
+      # Multi-get from space 2
+      {:ok, results2} = SQLite.multi_get(state, 2, ["key1", "key2"])
+      assert results2 == %{"key1" => %{val: 3}}
+    end
+
+    test "multi_put with space_id", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Multi-put in space 1
+      :ok = SQLite.multi_put(state, 1, [{"key1", %{val: 1}}, {"key2", %{val: 2}}])
+
+      {:ok, val1} = SQLite.get(state, 1, "key1")
+      {:ok, val2} = SQLite.get(state, 1, "key2")
+
+      assert val1 == %{val: 1}
+      assert val2 == %{val: 2}
+
+      # Same keys in space 2 should not exist
+      {:ok, nil} = SQLite.get(state, 2, "key1")
+      {:ok, nil} = SQLite.get(state, 2, "key2")
+    end
+
+    test "composite primary key prevents conflicts", %{db_path: db_path} do
+      {:ok, state} = SQLite.init(path: db_path)
+
+      # Put same key in different spaces
+      :ok = SQLite.put(state, 1, "key", %{version: 1})
+      :ok = SQLite.put(state, 2, "key", %{version: 2})
+
+      # Update in space 1 shouldn't affect space 2
+      :ok = SQLite.put(state, 1, "key", %{version: 1, updated: true})
+
+      {:ok, val1} = SQLite.get(state, 1, "key")
+      {:ok, val2} = SQLite.get(state, 2, "key")
+
+      assert val1 == %{version: 1, updated: true}
+      assert val2 == %{version: 2}
     end
   end
 
