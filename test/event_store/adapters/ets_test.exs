@@ -28,9 +28,9 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T2: append generates sequential event IDs" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, id1, state} = ETS.append(state, "entity1", "test.event", %{data: "first"})
-      {:ok, id2, state} = ETS.append(state, "entity1", "test.event", %{data: "second"})
-      {:ok, id3, _state} = ETS.append(state, "entity2", "test.event", %{data: "third"})
+      {:ok, id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{data: "first"})
+      {:ok, id2, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{data: "second"})
+      {:ok, id3, _seq, _state} = ETS.append(state, 1, "entity2", "test.event", %{data: "third"})
 
       assert id1 == 1
       assert id2 == 2
@@ -45,7 +45,7 @@ defmodule EventStore.Adapters.ETSTest do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
       payload = %{card_id: "card-123", front: "Hello", back: "Hola"}
-      {:ok, event_id, state} = ETS.append(state, "entity1", "basecard.created", payload)
+      {:ok, event_id, _seq, state} = ETS.append(state, 1, "entity1", "basecard.created", payload)
 
       # Lookup event from events table
       [{^event_id, event}] = :ets.lookup(state.events, event_id)
@@ -63,7 +63,8 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T4: append stores entity index entry" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, event_id, state} = ETS.append(state, "entity1", "test.event", %{data: "test"})
+      {:ok, event_id, _seq, state} =
+        ETS.append(state, 1, "entity1", "test.event", %{data: "test"})
 
       # Check entity index entry exists
       assert :ets.lookup(state.entity_index, {"entity1", event_id}) == [
@@ -79,7 +80,7 @@ defmodule EventStore.Adapters.ETSTest do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
       before = DateTime.utc_now()
-      {:ok, event_id, state} = ETS.append(state, "entity1", "test.event", %{})
+      {:ok, event_id, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{})
       after_time = DateTime.utc_now()
 
       [{^event_id, event}] = :ets.lookup(state.events, event_id)
@@ -100,7 +101,7 @@ defmodule EventStore.Adapters.ETSTest do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
       opts = [causation_id: 42, correlation_id: "custom-correlation-id"]
-      {:ok, event_id, state} = ETS.append(state, "entity1", "test.event", %{}, opts)
+      {:ok, event_id, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{}, opts)
 
       [{^event_id, event}] = :ets.lookup(state.events, event_id)
 
@@ -115,10 +116,13 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T7: get_events returns events for entity" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.created", %{name: "first"})
-      {:ok, _id2, state} = ETS.append(state, "entity1", "test.updated", %{name: "second"})
-      {:ok, _id3, state} = ETS.append(state, "entity2", "test.created", %{name: "other"})
-      {:ok, _id4, state} = ETS.append(state, "entity1", "test.deleted", %{name: "third"})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.created", %{name: "first"})
+
+      {:ok, _id2, _seq, state} =
+        ETS.append(state, 1, "entity1", "test.updated", %{name: "second"})
+
+      {:ok, _id3, _seq, state} = ETS.append(state, 1, "entity2", "test.created", %{name: "other"})
+      {:ok, _id4, _seq, state} = ETS.append(state, 1, "entity1", "test.deleted", %{name: "third"})
 
       {:ok, events} = ETS.get_events(state, "entity1")
 
@@ -135,10 +139,10 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T8: get_events filters by from_sequence" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.event", %{seq: 1})
-      {:ok, id2, state} = ETS.append(state, "entity1", "test.event", %{seq: 2})
-      {:ok, id3, state} = ETS.append(state, "entity1", "test.event", %{seq: 3})
-      {:ok, _id4, state} = ETS.append(state, "entity1", "test.event", %{seq: 4})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, id2, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 2})
+      {:ok, id3, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 3})
+      {:ok, _id4, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 4})
 
       {:ok, events} = ETS.get_events(state, "entity1", from_sequence: id2)
 
@@ -154,10 +158,10 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T9: get_events respects limit" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.event", %{seq: 1})
-      {:ok, _id2, state} = ETS.append(state, "entity1", "test.event", %{seq: 2})
-      {:ok, _id3, state} = ETS.append(state, "entity1", "test.event", %{seq: 3})
-      {:ok, _id4, state} = ETS.append(state, "entity1", "test.event", %{seq: 4})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, _id2, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 2})
+      {:ok, _id3, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 3})
+      {:ok, _id4, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 4})
 
       {:ok, events} = ETS.get_events(state, "entity1", limit: 2)
 
@@ -173,7 +177,7 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T10: get_events returns empty for unknown entity" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.event", %{})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{})
 
       {:ok, events} = ETS.get_events(state, "unknown_entity")
 
@@ -187,8 +191,8 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T11: get_event returns single event by ID" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.event", %{data: "first"})
-      {:ok, id2, state} = ETS.append(state, "entity1", "test.event", %{data: "second"})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{data: "first"})
+      {:ok, id2, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{data: "second"})
 
       {:ok, event} = ETS.get_event(state, id2)
 
@@ -216,7 +220,9 @@ defmodule EventStore.Adapters.ETSTest do
       # Create 150 events
       state =
         Enum.reduce(1..150, state, fn i, acc_state ->
-          {:ok, _id, new_state} = ETS.append(acc_state, "entity1", "test.event", %{seq: i})
+          {:ok, _id, _seq, new_state} =
+            ETS.append(acc_state, 1, "entity1", "test.event", %{seq: i})
+
           new_state
         end)
 
@@ -236,11 +242,11 @@ defmodule EventStore.Adapters.ETSTest do
     test "RMX005_2A_T14: stream_all_events filters by from_sequence" do
       {:ok, state} = ETS.init(table_name: :"test_events_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.event", %{seq: 1})
-      {:ok, _id2, state} = ETS.append(state, "entity1", "test.event", %{seq: 2})
-      {:ok, id3, state} = ETS.append(state, "entity1", "test.event", %{seq: 3})
-      {:ok, _id4, state} = ETS.append(state, "entity1", "test.event", %{seq: 4})
-      {:ok, _id5, state} = ETS.append(state, "entity1", "test.event", %{seq: 5})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, _id2, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 2})
+      {:ok, id3, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 3})
+      {:ok, _id4, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 4})
+      {:ok, _id5, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{seq: 5})
 
       stream = ETS.stream_all_events(state, from_sequence: id3)
       events = Enum.to_list(stream)
@@ -262,9 +268,9 @@ defmodule EventStore.Adapters.ETSTest do
       assert seq0 == 0
 
       # After appending 3 events
-      {:ok, _id1, state} = ETS.append(state, "entity1", "test.event", %{})
-      {:ok, _id2, state} = ETS.append(state, "entity1", "test.event", %{})
-      {:ok, _id3, state} = ETS.append(state, "entity1", "test.event", %{})
+      {:ok, _id1, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id2, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id3, _seq, state} = ETS.append(state, 1, "entity1", "test.event", %{})
 
       {:ok, seq3} = ETS.get_latest_sequence(state)
       assert seq3 == 3
@@ -282,7 +288,7 @@ defmodule EventStore.Adapters.ETSTest do
         1..100
         |> Enum.map(fn i ->
           Task.async(fn ->
-            {:ok, id, _state} = ETS.append(state, "entity#{i}", "test.event", %{seq: i})
+            {:ok, id, _seq, _state} = ETS.append(state, 1, "entity#{i}", "test.event", %{seq: i})
             id
           end)
         end)
@@ -308,8 +314,8 @@ defmodule EventStore.Adapters.ETSTest do
       {time_us, final_state} =
         :timer.tc(fn ->
           Enum.reduce(1..10_000, state, fn i, acc_state ->
-            {:ok, _id, new_state} =
-              ETS.append(acc_state, "entity#{rem(i, 100)}", "test.event", %{seq: i})
+            {:ok, _id, _seq, new_state} =
+              ETS.append(acc_state, 1, "entity#{rem(i, 100)}", "test.event", %{seq: i})
 
             new_state
           end)
@@ -334,7 +340,10 @@ defmodule EventStore.Adapters.ETSTest do
       state =
         Enum.reduce(1..10_000, state, fn i, acc_state ->
           entity_id = "entity#{rem(i, 100)}"
-          {:ok, _id, new_state} = ETS.append(acc_state, entity_id, "test.event", %{seq: i})
+
+          {:ok, _id, _seq, new_state} =
+            ETS.append(acc_state, 1, entity_id, "test.event", %{seq: i})
+
           new_state
         end)
 

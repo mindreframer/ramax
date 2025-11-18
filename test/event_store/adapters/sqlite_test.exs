@@ -85,9 +85,13 @@ defmodule EventStore.Adapters.SQLiteTest do
       db_path = temp_db_path()
       {:ok, state} = SQLite.init(database: db_path)
 
-      {:ok, id1, state} = SQLite.append(state, "entity1", "test.event", %{data: "first"})
-      {:ok, id2, state} = SQLite.append(state, "entity1", "test.event", %{data: "second"})
-      {:ok, id3, _state} = SQLite.append(state, "entity2", "test.event", %{data: "third"})
+      {:ok, id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{data: "first"})
+
+      {:ok, id2, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", %{data: "second"})
+
+      {:ok, id3, _seq, _state} =
+        SQLite.append(state, 1, "entity2", "test.event", %{data: "third"})
 
       assert id1 == 1
       assert id2 == 2
@@ -101,7 +105,9 @@ defmodule EventStore.Adapters.SQLiteTest do
       {:ok, state} = SQLite.init(database: db_path)
 
       large_payload = %{data: String.duplicate("test", 1000)}
-      {:ok, event_id, state} = SQLite.append(state, "entity1", "test.event", large_payload)
+
+      {:ok, event_id, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", large_payload)
 
       # Query raw payload size from database
       {:ok, stmt} =
@@ -132,8 +138,8 @@ defmodule EventStore.Adapters.SQLiteTest do
       payload = %{card_id: "card-123", front: "Hello"}
       opts = [causation_id: 42, correlation_id: "custom-correlation"]
 
-      {:ok, event_id, state} =
-        SQLite.append(state, "entity1", "basecard.created", payload, opts)
+      {:ok, event_id, _seq, state} =
+        SQLite.append(state, 1, "entity1", "basecard.created", payload, opts)
 
       {:ok, event} = SQLite.get_event(state, event_id)
 
@@ -152,9 +158,9 @@ defmodule EventStore.Adapters.SQLiteTest do
       {:ok, state} = SQLite.init(database: db_path)
 
       # Append events to different entities
-      {:ok, _id1, state} = SQLite.append(state, "entity1", "test.event", %{data: 1})
-      {:ok, _id2, state} = SQLite.append(state, "entity2", "test.event", %{data: 2})
-      {:ok, _id3, state} = SQLite.append(state, "entity1", "test.event", %{data: 3})
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{data: 1})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity2", "test.event", %{data: 2})
+      {:ok, _id3, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{data: 3})
 
       # Query should use composite index
       {:ok, events} = SQLite.get_events(state, "entity1")
@@ -170,10 +176,10 @@ defmodule EventStore.Adapters.SQLiteTest do
       db_path = temp_db_path()
       {:ok, state} = SQLite.init(database: db_path)
 
-      {:ok, _id1, state} = SQLite.append(state, "entity1", "test.event", %{seq: 1})
-      {:ok, id2, state} = SQLite.append(state, "entity1", "test.event", %{seq: 2})
-      {:ok, id3, state} = SQLite.append(state, "entity1", "test.event", %{seq: 3})
-      {:ok, _id4, state} = SQLite.append(state, "entity1", "test.event", %{seq: 4})
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, id2, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 2})
+      {:ok, id3, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 3})
+      {:ok, _id4, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 4})
 
       {:ok, events} = SQLite.get_events(state, "entity1", from_sequence: id2)
 
@@ -188,10 +194,10 @@ defmodule EventStore.Adapters.SQLiteTest do
       db_path = temp_db_path()
       {:ok, state} = SQLite.init(database: db_path)
 
-      {:ok, _id1, state} = SQLite.append(state, "entity1", "test.event", %{seq: 1})
-      {:ok, _id2, state} = SQLite.append(state, "entity1", "test.event", %{seq: 2})
-      {:ok, _id3, state} = SQLite.append(state, "entity1", "test.event", %{seq: 3})
-      {:ok, _id4, state} = SQLite.append(state, "entity1", "test.event", %{seq: 4})
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 1})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 2})
+      {:ok, _id3, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 3})
+      {:ok, _id4, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{seq: 4})
 
       {:ok, events} = SQLite.get_events(state, "entity1", limit: 2)
 
@@ -207,7 +213,9 @@ defmodule EventStore.Adapters.SQLiteTest do
       {:ok, state} = SQLite.init(database: db_path)
 
       original_payload = %{complex: %{nested: %{data: "test"}}, list: [1, 2, 3]}
-      {:ok, _event_id, state} = SQLite.append(state, "entity1", "test.event", original_payload)
+
+      {:ok, _event_id, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", original_payload)
 
       {:ok, events} = SQLite.get_events(state, "entity1")
 
@@ -221,8 +229,11 @@ defmodule EventStore.Adapters.SQLiteTest do
       db_path = temp_db_path()
       {:ok, state} = SQLite.init(database: db_path)
 
-      {:ok, _id1, state} = SQLite.append(state, "entity1", "test.event", %{data: "first"})
-      {:ok, id2, state} = SQLite.append(state, "entity1", "test.event", %{data: "second"})
+      {:ok, _id1, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", %{data: "first"})
+
+      {:ok, id2, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", %{data: "second"})
 
       {:ok, event} = SQLite.get_event(state, id2)
 
@@ -239,7 +250,9 @@ defmodule EventStore.Adapters.SQLiteTest do
       # Create 150 events
       state =
         Enum.reduce(1..150, state, fn i, acc_state ->
-          {:ok, _id, new_state} = SQLite.append(acc_state, "entity1", "test.event", %{seq: i})
+          {:ok, _id, _seq, new_state} =
+            SQLite.append(acc_state, 1, "entity1", "test.event", %{seq: i})
+
           new_state
         end)
 
@@ -261,8 +274,8 @@ defmodule EventStore.Adapters.SQLiteTest do
       # Create 1000 events (reduced from 100k for test speed)
       state =
         Enum.reduce(1..1000, state, fn i, acc_state ->
-          {:ok, _id, new_state} =
-            SQLite.append(acc_state, "entity#{rem(i, 10)}", "test.event", %{seq: i})
+          {:ok, _id, _seq, new_state} =
+            SQLite.append(acc_state, 1, "entity#{rem(i, 10)}", "test.event", %{seq: i})
 
           new_state
         end)
@@ -282,9 +295,9 @@ defmodule EventStore.Adapters.SQLiteTest do
       db_path = temp_db_path()
       {:ok, state} = SQLite.init(database: db_path)
 
-      {:ok, _id1, state} = SQLite.append(state, "entity1", "test.event", %{})
-      {:ok, _id2, state} = SQLite.append(state, "entity1", "test.event", %{})
-      {:ok, _id3, state} = SQLite.append(state, "entity1", "test.event", %{})
+      {:ok, _id1, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id2, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
+      {:ok, _id3, _seq, state} = SQLite.append(state, 1, "entity1", "test.event", %{})
 
       {:ok, latest_seq} = SQLite.get_latest_sequence(state)
 
@@ -315,8 +328,8 @@ defmodule EventStore.Adapters.SQLiteTest do
         field3: String.duplicate("CCCC", 100)
       }
 
-      {:ok, event_id, state} =
-        SQLite.append(state, "entity1", "test.event", repetitive_payload)
+      {:ok, event_id, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", repetitive_payload)
 
       # Verify we can retrieve and decompress the payload correctly
       {:ok, event} = SQLite.get_event(state, event_id)
@@ -340,7 +353,8 @@ defmodule EventStore.Adapters.SQLiteTest do
       large_data = String.duplicate("x", 1_000_000)
       large_payload = %{data: large_data}
 
-      {:ok, event_id, state} = SQLite.append(state, "entity1", "test.event", large_payload)
+      {:ok, event_id, _seq, state} =
+        SQLite.append(state, 1, "entity1", "test.event", large_payload)
 
       # Verify we can retrieve it
       {:ok, event} = SQLite.get_event(state, event_id)

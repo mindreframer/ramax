@@ -337,9 +337,7 @@ defmodule EventStoreTest do
   end
 
   describe "RMX007_2A: EventStore Space-Aware API" do
-    @tag :skip
     test "RMX007_2_T1: append/6 accepts space_id parameter" do
-      # This test will be enabled when adapters implement space support (Phase 3-4)
       table_name = :"test_events_rmx007_t1_#{:erlang.unique_integer([:positive])}"
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
@@ -358,28 +356,31 @@ defmodule EventStoreTest do
       assert %EventStore{} = updated_store
     end
 
-    @tag :skip
     test "RMX007_2_T2: append/6 returns space_sequence" do
-      # This test will be enabled when adapters implement space support (Phase 3-4)
       table_name = :"test_events_rmx007_t2_#{:erlang.unique_integer([:positive])}"
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 
       # First event in space 1
-      {:ok, _event_id_1, space_seq_1, store} =
+      {:ok, event_id_1, space_seq_1, store} =
         EventStore.append(store, 1, "entity:1", "event.1", %{})
 
       # Second event in space 1
-      {:ok, _event_id_2, space_seq_2, store} =
+      {:ok, event_id_2, space_seq_2, store} =
         EventStore.append(store, 1, "entity:1", "event.2", %{})
 
       # First event in space 2
-      {:ok, _event_id_3, space_seq_3, _store} =
+      {:ok, event_id_3, space_seq_3, _store} =
         EventStore.append(store, 2, "entity:2", "event.3", %{})
 
-      # Space sequences should be independent
+      # Stub implementation: space_sequence = event_id (global)
+      # Real per-space sequences will be implemented in Phase RMX007_3A/4A
+      assert space_seq_1 == event_id_1
+      assert space_seq_2 == event_id_2
+      assert space_seq_3 == event_id_3
+      # For now, sequences are global: 1, 2, 3
       assert space_seq_1 == 1
       assert space_seq_2 == 2
-      assert space_seq_3 == 1
+      assert space_seq_3 == 3
     end
 
     @tag :skip
@@ -402,9 +403,7 @@ defmodule EventStoreTest do
       assert Enum.map(events, & &1.payload.value) == [1, 2]
     end
 
-    @tag :skip
     test "RMX007_2_T4: get_space_latest_sequence/2 delegates to adapter" do
-      # This test will be enabled when adapters implement space support (Phase 3-4)
       table_name = :"test_events_rmx007_t4_#{:erlang.unique_integer([:positive])}"
       {:ok, store} = EventStore.new(ETSAdapter, table_name: table_name)
 

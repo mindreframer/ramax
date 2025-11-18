@@ -103,10 +103,11 @@ defmodule EventStore.Adapters.SQLite do
   end
 
   @impl true
-  def append(state, space_id, entity_id, event_type, payload, opts \\ []) do
+  def append(state, _space_id, entity_id, event_type, payload, opts \\ []) do
     # TODO (RMX007_3A): Implement per-space sequences
     # This is a temporary stub - full implementation in Phase RMX007_3A
-    # For now, store space_id in metadata but use global event_id as space_sequence
+    # space_id parameter unused until schema is updated with space_id column
+    # For now, hardcode space_id=1 in row_to_event metadata
 
     timestamp = DateTime.to_unix(DateTime.utc_now(), :millisecond)
     causation_id = Keyword.get(opts, :causation_id)

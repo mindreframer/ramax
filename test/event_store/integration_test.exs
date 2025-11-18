@@ -20,9 +20,10 @@ defmodule EventStore.IntegrationTest do
       {:ok, store} = EventStore.new(ETS, table_name: :test_workflow_ets)
 
       # Append events
-      {:ok, event_id_1, store} =
+      {:ok, event_id_1, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.created",
           %{front: "Hello", back: "Hola"}
@@ -31,9 +32,10 @@ defmodule EventStore.IntegrationTest do
       assert is_integer(event_id_1)
       assert event_id_1 > 0
 
-      {:ok, event_id_2, store} =
+      {:ok, event_id_2, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.updated",
           %{front: "Hi"},
@@ -42,9 +44,10 @@ defmodule EventStore.IntegrationTest do
 
       assert event_id_2 == event_id_1 + 1
 
-      {:ok, event_id_3, store} =
+      {:ok, event_id_3, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card2",
           "basecard.created",
           %{front: "Goodbye", back: "Adiós"}
@@ -83,9 +86,10 @@ defmodule EventStore.IntegrationTest do
       {:ok, store} = EventStore.new(SQLite, database: db_path)
 
       # Append events
-      {:ok, event_id_1, store} =
+      {:ok, event_id_1, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.created",
           %{front: "Hello", back: "Hola"}
@@ -94,9 +98,10 @@ defmodule EventStore.IntegrationTest do
       assert is_integer(event_id_1)
       assert event_id_1 > 0
 
-      {:ok, event_id_2, store} =
+      {:ok, event_id_2, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.updated",
           %{front: "Hi"},
@@ -105,9 +110,10 @@ defmodule EventStore.IntegrationTest do
 
       assert event_id_2 == event_id_1 + 1
 
-      {:ok, event_id_3, store} =
+      {:ok, event_id_3, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card2",
           "basecard.created",
           %{front: "Goodbye", back: "Adiós"}
@@ -159,7 +165,7 @@ defmodule EventStore.IntegrationTest do
       {ets_event_ids, ets_store} =
         Enum.reduce(events, {[], ets_store}, fn {entity_id, event_type, payload}, {ids, store} ->
           {:ok, event_id, _seq, new_store} =
-            EventStore.append(store, entity_id, event_type, payload)
+            EventStore.append(store, 1, entity_id, event_type, payload)
 
           {ids ++ [event_id], new_store}
         end)
@@ -168,7 +174,7 @@ defmodule EventStore.IntegrationTest do
         Enum.reduce(events, {[], sqlite_store}, fn {entity_id, event_type, payload},
                                                    {ids, store} ->
           {:ok, event_id, _seq, new_store} =
-            EventStore.append(store, entity_id, event_type, payload)
+            EventStore.append(store, 1, entity_id, event_type, payload)
 
           {ids ++ [event_id], new_store}
         end)
@@ -219,6 +225,7 @@ defmodule EventStore.IntegrationTest do
       {:ok, event_id, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.created",
           %{front: "Original", back: "Original"}
@@ -234,9 +241,10 @@ defmodule EventStore.IntegrationTest do
       refute function_exported?(EventStore, :delete_event, 2)
 
       # Append a correcting event instead
-      {:ok, event_id_2, store} =
+      {:ok, event_id_2, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.updated",
           %{front: "Corrected"},
@@ -262,27 +270,30 @@ defmodule EventStore.IntegrationTest do
       correlation_id = "batch-import-#{System.unique_integer([:positive])}"
 
       # Append multiple events with same correlation_id
-      {:ok, event_id_1, store} =
+      {:ok, event_id_1, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.created",
           %{front: "A"},
           correlation_id: correlation_id
         )
 
-      {:ok, event_id_2, store} =
+      {:ok, event_id_2, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card2",
           "basecard.created",
           %{front: "B"},
           correlation_id: correlation_id
         )
 
-      {:ok, event_id_3, store} =
+      {:ok, event_id_3, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card3",
           "basecard.created",
           %{front: "C"},
@@ -290,9 +301,10 @@ defmodule EventStore.IntegrationTest do
         )
 
       # Append unrelated event
-      {:ok, event_id_4, _store} =
+      {:ok, event_id_4, _seq, _store} =
         EventStore.append(
           store,
+          1,
           "base_card:card4",
           "basecard.created",
           %{front: "D"}
@@ -325,18 +337,20 @@ defmodule EventStore.IntegrationTest do
       {:ok, store} = EventStore.new(ETS, table_name: :test_causation)
 
       # Create initial event
-      {:ok, event_id_1, store} =
+      {:ok, event_id_1, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.created",
           %{front: "Initial"}
         )
 
       # Event caused by event_id_1
-      {:ok, event_id_2, store} =
+      {:ok, event_id_2, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.updated",
           %{front: "Updated"},
@@ -344,9 +358,10 @@ defmodule EventStore.IntegrationTest do
         )
 
       # Event caused by event_id_2
-      {:ok, event_id_3, store} =
+      {:ok, event_id_3, _seq, store} =
         EventStore.append(
           store,
+          1,
           "base_card:card1",
           "basecard.updated",
           %{back: "Updated back"},
@@ -386,9 +401,10 @@ defmodule EventStore.IntegrationTest do
       {time_us, final_store} =
         :timer.tc(fn ->
           Enum.reduce(1..10_000, store, fn i, acc_store ->
-            {:ok, _event_id, new_store} =
+            {:ok, _event_id, _seq, new_store} =
               EventStore.append(
                 acc_store,
+                1,
                 "entity:#{rem(i, 100)}",
                 "event.type",
                 %{index: i, data: "payload_#{i}"}
@@ -422,9 +438,10 @@ defmodule EventStore.IntegrationTest do
       {time_us, final_store} =
         :timer.tc(fn ->
           Enum.reduce(1..10_000, store, fn i, acc_store ->
-            {:ok, _event_id, new_store} =
+            {:ok, _event_id, _seq, new_store} =
               EventStore.append(
                 acc_store,
+                1,
                 "entity:#{rem(i, 100)}",
                 "event.type",
                 %{index: i, data: "payload_#{i}"}
@@ -457,9 +474,10 @@ defmodule EventStore.IntegrationTest do
 
       final_store =
         Enum.reduce(1..100_000, store, fn i, acc_store ->
-          {:ok, _event_id, new_store} =
+          {:ok, _event_id, _seq, new_store} =
             EventStore.append(
               acc_store,
+              1,
               "entity:#{rem(i, 1000)}",
               "event.type",
               %{index: i}
@@ -500,9 +518,10 @@ defmodule EventStore.IntegrationTest do
         Enum.reduce(1..350_000, store, fn i, acc_store ->
           if rem(i, 50_000) == 0, do: IO.puts("  Inserted #{i} events...")
 
-          {:ok, _event_id, new_store} =
+          {:ok, _event_id, _seq, new_store} =
             EventStore.append(
               acc_store,
+              1,
               "entity:#{rem(i, 1000)}",
               "event.type",
               %{index: i}
@@ -555,10 +574,10 @@ defmodule EventStore.IntegrationTest do
         EventStore.append(store, 1, "base_card:1", "basecard.updated", %{back: "B"})
 
       {:ok, _id, _seq, store} =
-        EventStore.append(store, "hosttrack:1", "hosttrack.created", %{title: "Track"})
+        EventStore.append(store, 1, "hosttrack:1", "hosttrack.created", %{title: "Track"})
 
       {:ok, _id, _seq, store} =
-        EventStore.append(store, "hosttrack:1", "hosttrack.updated", %{duration: 120})
+        EventStore.append(store, 1, "hosttrack:1", "hosttrack.updated", %{duration: 120})
 
       {:ok, _id, _seq, store} =
         EventStore.append(store, 1, "deck:1", "deck.created", %{name: "My Deck"})
@@ -597,10 +616,10 @@ defmodule EventStore.IntegrationTest do
 
       # Append hosttrack events
       {:ok, _id, _seq, store} =
-        EventStore.append(store, "hosttrack:1", "hosttrack.created", %{})
+        EventStore.append(store, 1, "hosttrack:1", "hosttrack.created", %{})
 
       {:ok, _id, _seq, store} =
-        EventStore.append(store, "hosttrack:1", "hosttrack.updated", %{})
+        EventStore.append(store, 1, "hosttrack:1", "hosttrack.updated", %{})
 
       # Filter basecard.* events
       basecard_events =
@@ -630,17 +649,17 @@ defmodule EventStore.IntegrationTest do
       {:ok, store} = EventStore.new(ETS, table_name: :test_timestamps)
 
       # Append events with small delays
-      {:ok, event_id_1, store} =
+      {:ok, event_id_1, _seq, store} =
         EventStore.append(store, 1, "entity:1", "event.type", %{order: 1})
 
       Process.sleep(10)
 
-      {:ok, event_id_2, store} =
+      {:ok, event_id_2, _seq, store} =
         EventStore.append(store, 1, "entity:1", "event.type", %{order: 2})
 
       Process.sleep(10)
 
-      {:ok, event_id_3, store} =
+      {:ok, event_id_3, _seq, store} =
         EventStore.append(store, 1, "entity:1", "event.type", %{order: 3})
 
       # Get events
@@ -699,10 +718,10 @@ defmodule EventStore.IntegrationTest do
       # Create ETS store and append events
       {:ok, ets_store} = EventStore.new(ETS, table_name: :test_interchangeable_ets)
 
-      {:ok, _id, ets_store} =
+      {:ok, _id, _seq, ets_store} =
         EventStore.append(ets_store, 1, "entity:1", "event.created", %{value: "A"})
 
-      {:ok, _id, ets_store} =
+      {:ok, _id, _seq, ets_store} =
         EventStore.append(ets_store, 1, "entity:1", "event.updated", %{value: "B"})
 
       # Get events from ETS
@@ -713,10 +732,10 @@ defmodule EventStore.IntegrationTest do
       File.rm(db_path)
       {:ok, sqlite_store} = EventStore.new(SQLite, database: db_path)
 
-      {:ok, _id, sqlite_store} =
+      {:ok, _id, _seq, sqlite_store} =
         EventStore.append(sqlite_store, 1, "entity:1", "event.created", %{value: "A"})
 
-      {:ok, _id, sqlite_store} =
+      {:ok, _id, _seq, sqlite_store} =
         EventStore.append(sqlite_store, 1, "entity:1", "event.updated", %{value: "B"})
 
       # Get events from SQLite
